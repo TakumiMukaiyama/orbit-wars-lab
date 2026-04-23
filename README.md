@@ -98,15 +98,37 @@ cp -r agents/baselines/starter agents/mine/v1-my-bot
 # edit agents/mine/v1-my-bot/main.py — replace the `def agent(obs)` body
 ```
 
-Then in the viewer, pick it in *Quick Match → Picker → mine* and hit Play.
-For a full benchmark, run a Gauntlet tournament with your agent as the
-challenger (`Tournaments → Shape: gauntlet → Challenger: mine/v1-my-bot`).
+The `./agents` folder is mounted into the container as a live volume, so
+changes are picked up immediately — no `docker compose build` needed.
+Refresh the browser, then in *Quick Match → Picker → mine* you'll see
+your agent.
 
-CLI equivalent:
+For a full benchmark, run a Gauntlet tournament with your agent as the
+challenger (*Tournaments → Shape: gauntlet → Challenger: mine/v1-my-bot*).
+
+CLI equivalent (works inside the container too — `docker compose exec app
+orbit-wars-tournament gauntlet ...`):
 
 ```bash
 python -m orbit_wars_app.tournament gauntlet mine/v1-my-bot --games-per-pair 10
 ```
+
+---
+
+## Where your data lives
+
+Both Docker and native dev write to **your host filesystem** — everything
+persists across container restarts / clones / rebuilds:
+
+| Folder | What's there | Edited by |
+|---|---|---|
+| `./agents/` | 9 bundled agents + anything you drop in `mine/` | you |
+| `./runs/trueskill.json` | TrueSkill leaderboard (seeded, live-updated) | app |
+| `./runs/<date-id>/` | Tournament metadata + match results | app |
+| `./runs/<date-id>/replays/*.json` | Replay for each match | app |
+
+Delete `runs/` if you want to wipe ratings + history and start fresh.
+Your agents are untouched.
 
 ---
 

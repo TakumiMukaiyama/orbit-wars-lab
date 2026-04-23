@@ -12,7 +12,12 @@ services:
     container_name: orbit-wars-lab
     ports:
       - "6001:8000"
-    # Persist tournament artifacts across `docker compose down` runs.
+    # Volumes mount host folders over the image — changes are live, no rebuild.
+    # `agents/` is bidirectional: the image ships 9 agents, which you see in
+    # your local ./agents after the first `docker compose up`. Drop new ones
+    # into ./agents/mine/<name>/ and the container picks them up immediately.
+    # `runs/` persists tournaments + leaderboard + replays across restarts.
     volumes:
+      - ./agents:/app/agents
       - ./runs:/app/runs
     restart: unless-stopped
