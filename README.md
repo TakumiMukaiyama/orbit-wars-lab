@@ -45,6 +45,11 @@ Open <http://localhost:6001>. Done.
 First run builds the image (~3-5 min, pulls pytorch CPU). Subsequent `up`
 is instant.
 
+**Port conflict?** Set `PORT` to anything free:
+```bash
+PORT=7001 docker compose up
+```
+
 **macOS / non-standard UID:** to have files written by the container owned
 by your host user (not `1000`), create a `.env` once:
 
