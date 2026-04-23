@@ -10,7 +10,23 @@ live stats sidebar, click-to-select planets/fleets, multi-selection with
 inbound-fleet ETAs, light/dark mode, and separate tournament formats
 (round-robin + gauntlet).
 
-*(screenshot placeholder — add one before making the repo public)*
+![Quick Match view — light mode with planet selected](docs/screenshots/01-quick-match-view-light.png)
+
+<details>
+<summary>More screenshots</summary>
+
+| | |
+|---|---|
+| ![dark mode](docs/screenshots/02-quick-match-view-dark.png) | ![picker](docs/screenshots/03-quick-match-picker.png) |
+| Dark mode + fleet trajectories | Agent picker (2p / 4p, with ratings) |
+| ![tournaments](docs/screenshots/04-tournaments-create.png) | ![standings](docs/screenshots/05-tournament-standings.png) |
+| Tournament creator (round-robin / gauntlet) | Tournament standings + head-to-head matrix |
+| ![replays](docs/screenshots/06-replays-list.png) | ![agents](docs/screenshots/07-agents-zoo.png) |
+| Unified replay library (local + Kaggle import) | Agent zoo with tags |
+| ![leaderboard](docs/screenshots/08-leaderboard.png) | |
+| TrueSkill leaderboard — 2p / 4p / combined | |
+
+</details>
 
 ---
 
