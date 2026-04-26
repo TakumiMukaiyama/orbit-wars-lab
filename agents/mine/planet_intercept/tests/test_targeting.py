@@ -5,11 +5,11 @@ import pytest
 from src.targeting import (
     HOLD_HORIZON,
     NEUTRAL_OWNER,
+    classify_defense,
     compute_rival_eta,
     compute_rival_eta_per_player,
     enumerate_candidates,
     enumerate_intercept_candidates,
-    estimate_reserve,
     fleet_heading_to,
     select_move,
     ships_budget,
@@ -321,32 +321,6 @@ class TestFleetHeadingTo:
         assert fleet_heading_to(f, planet) is False
 
 
-class TestEstimateReserve:
-    def test_single_planet_returns_zero(self):
-        mine = P(0, 0, 50, 50, ships=50)
-        enemy_fleet = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=30)
-        r = estimate_reserve(mine, [enemy_fleet], my_player=0, my_planet_count=1)
-        assert r == 0
-
-    def test_incoming_enemy_fleet_raises_reserve(self):
-        mine = P(0, 0, 50, 50, ships=100)
-        enemy_fleet = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=30)
-        r = estimate_reserve(mine, [enemy_fleet], my_player=0, my_planet_count=3)
-        assert r >= 30
-
-    def test_sideways_fleet_ignored(self):
-        mine = P(0, 0, 50, 50, ships=100)
-        sideways = F(1, 1, 20, 20, angle=0.0, from_id=99, ships=30)
-        r = estimate_reserve(mine, [sideways], my_player=0, my_planet_count=3)
-        assert r == 0
-
-    def test_own_fleet_not_counted(self):
-        mine = P(0, 0, 50, 50, ships=100)
-        own_fleet = F(1, 0, 30, 50, angle=0.0, from_id=99, ships=30)
-        r = estimate_reserve(mine, [own_fleet], my_player=0, my_planet_count=3)
-        assert r == 0
-
-
 class TestEnumerateInterceptCandidates:
     def test_no_threat_returns_empty(self):
         mine = P(0, 0, 10, 10, ships=100)
@@ -402,3 +376,48 @@ class TestEnumerateInterceptCandidates:
         hi_values = [c[3] for c in cands if c[0].id == defended_hi.id]
         if lo_values and hi_values:
             assert max(hi_values) > max(lo_values)
+
+
+class TestClassifyDefense:
+    def test_no_incoming_is_safe(self):
+        mine = P(0, 0, 50, 50, ships=50)
+        status, reserve = classify_defense(mine, fleets=[], player=0)
+        assert status == "safe"
+        assert reserve == 0
+
+    def test_threatened_when_ships_cover_incoming(self):
+        mine = P(0, 0, 50, 50, ships=50)
+        enemy = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=30)
+        status, reserve = classify_defense(mine, [enemy], player=0)
+        # mine.ships=50 >= incoming=30 -> threatened
+        assert status == "threatened"
+        assert reserve == 30
+
+    def test_doomed_when_ships_insufficient(self):
+        mine = P(0, 0, 50, 50, ships=10)
+        enemy = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=30)
+        status, reserve = classify_defense(mine, [enemy], player=0)
+        # mine.ships=10 < incoming=30 -> doomed
+        assert status == "doomed"
+        assert reserve == 30
+
+    def test_own_fleet_not_counted(self):
+        mine = P(0, 0, 50, 50, ships=10)
+        own = F(1, 0, 30, 50, angle=0.0, from_id=99, ships=30)
+        status, reserve = classify_defense(mine, [own], player=0)
+        assert status == "safe"
+
+    def test_sideways_fleet_ignored(self):
+        mine = P(0, 0, 50, 50, ships=10)
+        sideways = F(1, 1, 20, 20, angle=0.0, from_id=99, ships=30)
+        status, reserve = classify_defense(mine, [sideways], player=0)
+        assert status == "safe"
+
+    def test_multiple_fleets_summed(self):
+        mine = P(0, 0, 50, 50, ships=40)
+        e1 = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=20)
+        e2 = F(2, 2, 30, 50, angle=0.0, from_id=99, ships=25)
+        status, reserve = classify_defense(mine, [e1, e2], player=0)
+        # incoming=45, mine.ships=40 < 45 -> doomed
+        assert status == "doomed"
+        assert reserve == 45

@@ -159,26 +159,13 @@ def fleet_heading_to(
     return eta_turns <= tolerance_turns
 
 
-def estimate_reserve(
-    mine: Planet, fleets, my_player: int, my_planet_count: int = 1, incoming_coef: float = 1.0
-) -> int:
-    """mine に向かう敵フリート ships の合計 × 係数を reserve として返す。
-
-    my_planet_count <= 1 の序盤は攻勢優先で reserve=0。
-    """
-    if my_planet_count <= 1:
-        return 0
-    incoming = 0
-    for f in fleets:
-        if f.owner == my_player:
-            continue
-        if fleet_heading_to(f, mine):
-            incoming += f.ships
-    return int(incoming * incoming_coef)
-
-
 def classify_defense(mine: Planet, fleets, player: int) -> tuple[str, int]:
-    """スタブ: Task 3 で本実装。"""
+    """mine の防衛状況を ("safe"|"threatened"|"doomed", incoming_ships) で返す。
+
+    "doomed": 守れない (mine.ships < incoming)
+    "threatened": 守れる (mine.ships >= incoming > 0)
+    "safe": 敵フリートなし
+    """
     incoming = sum(
         f.ships for f in fleets
         if f.owner != player and fleet_heading_to(f, mine)
