@@ -32,14 +32,17 @@ def parse_obs(obs):
         raw_fleets = obs.get("fleets", [])
         player = obs.get("player", 0)
         angular_velocity = obs.get("angular_velocity", 0.0)
+        step = obs.get("step", 0)
     else:
         raw_planets = obs.planets
         raw_fleets = obs.fleets
         player = obs.player
         angular_velocity = getattr(obs, "angular_velocity", 0.0)
+        step = getattr(obs, "step", 0)
     planets = [Planet(*p) for p in raw_planets]
     fleets = [Fleet(*f) for f in raw_fleets]
-    return player, planets, fleets, angular_velocity
+    remaining_turns = 500 - step
+    return player, planets, fleets, angular_velocity, remaining_turns
 
 
 def angle_to(src: Planet, dst: Planet) -> float:

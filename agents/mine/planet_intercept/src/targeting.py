@@ -128,6 +128,7 @@ def enumerate_candidates(
     angular_velocity: float = 0.0,
     planned: dict | None = None,
     mode: str = "neutral",
+    remaining_turns: int | None = None,
 ):
     """自分以外が所有する惑星をインターセプト位置で距離昇順ソートし上位 top_n 件を返す。
 
@@ -162,6 +163,8 @@ def enumerate_candidates(
             ships_approx = ships_budget(t)
             my_eta = route_eta(my_planet.x, my_planet.y, ix, iy, ships_approx)
         if segment_hits_sun(my_planet.x, my_planet.y, ix, iy):
+            continue
+        if remaining_turns is not None and my_eta > remaining_turns:
             continue
         angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
         # my_eta が確定してから正確な ships_needed を計算

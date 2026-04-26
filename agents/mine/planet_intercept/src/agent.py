@@ -15,7 +15,7 @@ from .utils import parse_obs
 
 
 def agent(obs):
-    player, planets, fleets, angular_velocity = parse_obs(obs)
+    player, planets, fleets, angular_velocity, remaining_turns = parse_obs(obs)
 
     my_planets = [p for p in planets if p.owner == player]
     if not my_planets:
@@ -76,6 +76,7 @@ def agent(obs):
             angular_velocity=angular_velocity,
             planned=planned,
             mode=mode,
+            remaining_turns=remaining_turns,
         )
         intercept_cands = enumerate_intercept_candidates(
             mine,

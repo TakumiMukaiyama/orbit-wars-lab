@@ -473,6 +473,33 @@ class TestComputeDomination:
         assert AHEAD_THRESHOLD > 0
 
 
+class TestEnumerateCandidatesEndgame:
+    def test_unreachable_target_excluded(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        # (60,0) までの距離=60、1 ship -> speed=1.0 -> eta=60 turns
+        far_target = P(1, 1, 60, 0, ships=1, prod=1)
+        planets = [mine, far_target]
+        # remaining_turns=10 なら eta=60 > 10 で除外される
+        cands = enumerate_candidates(mine, planets, fleets=[], player=0, remaining_turns=10)
+        assert all(c[0].id != far_target.id for c in cands)
+
+    def test_reachable_target_included(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        near_target = P(1, 1, 5, 0, ships=1, prod=1)
+        planets = [mine, near_target]
+        # remaining_turns=100 なら eta < 100 で含まれる
+        cands = enumerate_candidates(mine, planets, fleets=[], player=0, remaining_turns=100)
+        assert any(c[0].id == near_target.id for c in cands)
+
+    def test_no_remaining_turns_no_filter(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        far_target = P(1, 1, 60, 0, ships=1, prod=1)
+        planets = [mine, far_target]
+        # remaining_turns=None -> フィルターなし
+        cands = enumerate_candidates(mine, planets, fleets=[], player=0, remaining_turns=None)
+        assert any(c[0].id == far_target.id for c in cands)
+
+
 class TestTargetValueWithMode:
     def test_behind_mode_reduces_neutral_value(self):
         mine = P(0, 0, 0, 0, ships=50)
