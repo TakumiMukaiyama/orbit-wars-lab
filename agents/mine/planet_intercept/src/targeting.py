@@ -201,10 +201,11 @@ def classify_defense(mine: Planet, fleets, player: int) -> tuple[str, int]:
     "doomed": 守れない (mine.ships < incoming)
     "threatened": 守れる (mine.ships >= incoming > 0)
     "safe": 敵フリートなし
+    tolerance_turns=15 で遠距離フリートによる早まった doomed 判定を抑制する。
     """
     incoming = sum(
         f.ships for f in fleets
-        if f.owner != player and fleet_heading_to(f, mine)
+        if f.owner != player and fleet_heading_to(f, mine, tolerance_turns=15.0)
     )
     if incoming == 0:
         return "safe", 0
@@ -253,7 +254,10 @@ def enumerate_intercept_candidates(
 
 
 def select_move(my_planet: Planet, candidates, reserve: int = 0, my_planet_count: int = 1):
-    """value 最大の発射可能候補を返す。なければ None。"""
+    """value 最大の発射可能候補を返す。なければ None。
+
+    返り値: (target_id, angle, ships_needed) または None
+    """
     best = None
     best_value = -math.inf
     for target, ships_needed, angle, value in candidates:
@@ -261,5 +265,5 @@ def select_move(my_planet: Planet, candidates, reserve: int = 0, my_planet_count
             continue
         if value > best_value:
             best_value = value
-            best = (angle, ships_needed)
+            best = (target.id, angle, ships_needed)
     return best

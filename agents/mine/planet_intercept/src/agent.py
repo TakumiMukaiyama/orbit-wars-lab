@@ -89,12 +89,9 @@ def agent(obs):
         picked = select_move(mine, all_cands, reserve=reserve, my_planet_count=n)
         if picked is None:
             continue
-        angle, ships = picked
-        # 送出した ships を planned に記録
-        for target, ships_needed, cand_angle, _ in all_cands:
-            if abs(cand_angle - angle) < 1e-9 and ships_needed == ships:
-                planned[target.id] = planned.get(target.id, 0) + ships
-                break
+        target_id, angle, ships = picked
+        # planned に直接記録 (逆引き不要)
+        planned[target_id] = planned.get(target_id, 0) + ships
         moves.append([mine.id, angle, ships])
 
     return moves

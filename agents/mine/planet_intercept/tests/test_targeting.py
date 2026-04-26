@@ -250,7 +250,8 @@ class TestSelectMove:
         ]
         picked = select_move(mine, cands, reserve=5)
         assert picked is not None
-        angle, ships = picked
+        target_id, angle, ships = picked
+        assert target_id == 2  # P(2) が value 最大
         assert angle == pytest.approx(1.0)
         assert ships == 2
 
@@ -259,6 +260,8 @@ class TestSelectMove:
         cands = [(P(1, 1, 10, 0, ships=1), 2, 0.0, -5.0)]
         result = select_move(mine, cands)
         assert result is not None
+        target_id, angle, ships = result
+        assert target_id == 1
 
 
 class TestComputeRivalETAPerPlayer:
