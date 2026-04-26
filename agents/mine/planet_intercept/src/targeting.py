@@ -116,19 +116,23 @@ def enumerate_candidates(
 
     out = []
     for t in targets:
-        ships_needed = ships_budget(t)
         r = math.hypot(t.x - CENTER, t.y - CENTER)
         is_orbital = angular_velocity != 0.0 and (r + t.radius < 50)
         if is_orbital:
+            # 近似 ships で ETA を求め、そのあと正確な ships_needed を再計算
+            ships_approx = ships_budget(t)
             ix, iy, my_eta = intercept_pos(
-                my_planet.x, my_planet.y, ships_needed, t, angular_velocity
+                my_planet.x, my_planet.y, ships_approx, t, angular_velocity
             )
         else:
             ix, iy = t.x, t.y
-            my_eta = route_eta(my_planet.x, my_planet.y, ix, iy, ships_needed)
+            ships_approx = ships_budget(t)
+            my_eta = route_eta(my_planet.x, my_planet.y, ix, iy, ships_approx)
         if segment_hits_sun(my_planet.x, my_planet.y, ix, iy):
             continue
         angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
+        # my_eta が確定してから正確な ships_needed を計算
+        ships_needed = ships_budget(t, my_eta=my_eta)
         rival_eta = compute_rival_eta(t, player, fleets, all_planets)
         value = target_value(
             my_planet, ix, iy, t.production, rival_eta, ships_needed, my_eta, target_owner=t.owner
