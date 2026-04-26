@@ -23,9 +23,13 @@ THREAT_MARGIN = 0.0
 TRAVEL_PENALTY = 0.0
 
 
-def ships_budget(target: Planet, margin: float = 0.0) -> int:
-    """占領に必要な最小艦船量 (駐留 + 1)。"""
-    return max(1, target.ships + 1)
+def ships_budget(target: Planet, my_eta: float = 0.0, already_sent: int = 0) -> int:
+    """占領に必要な最小艦船量。
+
+    到着時点のガリソン (駐留 + production * ETA) から既送艦を差し引く。
+    """
+    garrison_at_arrival = target.ships + int(target.production * my_eta)
+    return max(1, garrison_at_arrival - already_sent + 1)
 
 
 def compute_rival_eta_per_player(target: Planet, my_player: int, fleets, planets) -> dict:

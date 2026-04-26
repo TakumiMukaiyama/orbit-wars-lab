@@ -39,6 +39,25 @@ class TestShipsBudget:
         t = P(0, 1, 0, 0, ships=100)
         assert ships_budget(t) == 101
 
+    def test_eta_production_included(self):
+        t = P(0, 1, 0, 0, ships=10, prod=2)
+        # my_eta=5 -> garrison_at_arrival = 10 + 2*5 = 20 -> budget = 21
+        assert ships_budget(t, my_eta=5.0) == 21
+
+    def test_already_sent_subtracted(self):
+        t = P(0, 1, 0, 0, ships=10, prod=2)
+        # garrison=20, already_sent=8 -> 20 - 8 + 1 = 13
+        assert ships_budget(t, my_eta=5.0, already_sent=8) == 13
+
+    def test_already_sent_covers_all_returns_one(self):
+        t = P(0, 1, 0, 0, ships=10, prod=0)
+        # garrison=10, already_sent=15 -> max(1, 10 - 15 + 1) = 1
+        assert ships_budget(t, my_eta=0.0, already_sent=15) == 1
+
+    def test_backward_compat_no_args(self):
+        t = P(0, 1, 0, 0, ships=10)
+        assert ships_budget(t) == 11
+
 
 class TestTargetValue:
     def test_neutral_inf_rival_positive(self):
