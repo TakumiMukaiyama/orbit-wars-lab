@@ -426,6 +426,31 @@ class TestClassifyDefense:
         assert reserve == 45
 
 
+class TestComputeRivalEtaOrbital:
+    def test_angular_velocity_signature_accepted(self):
+        """angular_velocity 引数が受け付けられること。"""
+        target = P(1, -1, 30, 50, ships=5)
+        rival_planet = P(2, 1, 70, 50, ships=15)
+        planets = [P(0, 0, 10, 50, ships=10), rival_planet, target]
+        # 引数が存在することだけ確認 (TypeError が出ないこと)
+        eta = compute_rival_eta(target, my_player=0, fleets=[], planets=planets,
+                                angular_velocity=0.03)
+        assert math.isfinite(eta)
+
+    def test_orbital_and_static_give_different_eta(self):
+        """angular_velocity があるとき orbital ターゲットの rival ETA が静止計算と異なること。"""
+        # 軌道惑星: 中心(50,50) から距離 r=20 < 50 の惑星
+        target = P(1, -1, 70, 50, ships=5)  # (70,50) -> r=20 < 50 -> orbital
+        rival_planet = P(2, 1, 10, 50, ships=15)  # 反対側
+        planets = [P(0, 0, 90, 50, ships=10), rival_planet, target]
+        eta_static = compute_rival_eta(target, my_player=0, fleets=[], planets=planets,
+                                        angular_velocity=0.0)
+        eta_orbital = compute_rival_eta(target, my_player=0, fleets=[], planets=planets,
+                                         angular_velocity=0.03)
+        # 軌道惑星なので両者は異なるはず
+        assert eta_static != pytest.approx(eta_orbital, rel=0.01)
+
+
 class TestComputeDomination:
     def test_equal_returns_zero(self):
         dom = compute_domination(my_total=100, enemy_total=100)

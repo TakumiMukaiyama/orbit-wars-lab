@@ -36,13 +36,24 @@ def ships_budget(target: Planet, my_eta: float = 0.0, already_sent: int = 0) -> 
     return max(1, garrison_at_arrival - already_sent + 1)
 
 
-def compute_rival_eta_per_player(target: Planet, my_player: int, fleets, planets) -> dict:
+def compute_rival_eta_per_player(
+    target: Planet, my_player: int, fleets, planets, angular_velocity: float = 0.0
+) -> dict:
     """プレイヤー別の最速 ETA dict を返す。自分と中立は含まない。"""
+    from .utils import CENTER
+
+    r_target = math.hypot(target.x - CENTER, target.y - CENTER)
+    is_orbital = angular_velocity != 0.0 and (r_target + target.radius < 50)
+
     per: dict = {}
     for f in fleets:
         if f.owner == my_player:
             continue
-        e = route_eta(f.x, f.y, target.x, target.y, max(1, f.ships))
+        if is_orbital:
+            result = intercept_pos(f.x, f.y, max(1, f.ships), target, angular_velocity)
+            e = result[2]
+        else:
+            e = route_eta(f.x, f.y, target.x, target.y, max(1, f.ships))
         if e < per.get(f.owner, math.inf):
             per[f.owner] = e
 
@@ -52,16 +63,22 @@ def compute_rival_eta_per_player(target: Planet, my_player: int, fleets, planets
         if p.id == target.id:
             continue
         ships = max(1, p.ships)
-        e = route_eta(p.x, p.y, target.x, target.y, ships)
+        if is_orbital:
+            result = intercept_pos(p.x, p.y, ships, target, angular_velocity)
+            e = result[2]
+        else:
+            e = route_eta(p.x, p.y, target.x, target.y, ships)
         if e < per.get(p.owner, math.inf):
             per[p.owner] = e
 
     return per
 
 
-def compute_rival_eta(target: Planet, my_player: int, fleets, planets) -> float:
+def compute_rival_eta(
+    target: Planet, my_player: int, fleets, planets, angular_velocity: float = 0.0
+) -> float:
     """自分以外のプレイヤーがターゲットに到達する最速 ETA。"""
-    per = compute_rival_eta_per_player(target, my_player, fleets, planets)
+    per = compute_rival_eta_per_player(target, my_player, fleets, planets, angular_velocity)
     return min(per.values()) if per else math.inf
 
 
@@ -150,7 +167,7 @@ def enumerate_candidates(
         # my_eta が確定してから正確な ships_needed を計算
         already_sent = planned.get(t.id, 0) if planned else 0
         ships_needed = ships_budget(t, my_eta=my_eta, already_sent=already_sent)
-        rival_eta = compute_rival_eta(t, player, fleets, all_planets)
+        rival_eta = compute_rival_eta(t, player, fleets, all_planets, angular_velocity)
         value = target_value(
             my_planet, ix, iy, t.production, rival_eta, ships_needed, my_eta,
             target_owner=t.owner, mode=mode,
