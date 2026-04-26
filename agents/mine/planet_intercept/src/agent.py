@@ -20,25 +20,32 @@ def agent(obs):
 
     n = len(my_planets)
 
+    # 全自惑星の防衛ステータスを事前計算
+    defense_status: dict[int, tuple[str, int]] = {
+        p.id: classify_defense(p, fleets, player) for p in my_planets
+    }
+
     # planned[planet_id] = このターンに既に送った ships 合計
     planned: dict[int, int] = {}
 
     moves = []
     for mine in my_planets:
-        status, reserve = classify_defense(mine, fleets, player)
+        status, reserve = defense_status[mine.id]
 
         if status == "doomed" and n > 1:
-            # 最も近い自惑星に全艦退避
-            allies = [p for p in planets if p.owner == player and p.id != mine.id]
-            if allies:
+            # safe または threatened の自惑星にだけ退避する
+            safe_allies = [
+                p for p in my_planets
+                if p.id != mine.id and defense_status[p.id][0] != "doomed"
+            ]
+            if safe_allies:
                 nearest_ally = min(
-                    allies,
+                    safe_allies,
                     key=lambda p: (p.x - mine.x) ** 2 + (p.y - mine.y) ** 2,
                 )
                 evac_angle = math.atan2(nearest_ally.y - mine.y, nearest_ally.x - mine.x)
-                evac_ships = mine.ships
-                if evac_ships > 0:
-                    moves.append([mine.id, evac_angle, evac_ships])
+                if mine.ships > 0:
+                    moves.append([mine.id, evac_angle, mine.ships])
             continue
 
         attack_cands = enumerate_candidates(
