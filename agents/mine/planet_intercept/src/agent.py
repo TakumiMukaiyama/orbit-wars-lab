@@ -3,7 +3,10 @@
 import math
 
 from .targeting import (
+    AHEAD_THRESHOLD,
+    BEHIND_THRESHOLD,
     classify_defense,
+    compute_domination,
     enumerate_candidates,
     enumerate_intercept_candidates,
     select_move,
@@ -19,6 +22,23 @@ def agent(obs):
         return []
 
     n = len(my_planets)
+
+    # domination mode
+    my_total = (
+        sum(p.ships for p in my_planets)
+        + sum(f.ships for f in fleets if f.owner == player)
+    )
+    enemy_total = (
+        sum(p.ships for p in planets if p.owner not in (player, -1))
+        + sum(f.ships for f in fleets if f.owner not in (player, -1))
+    )
+    dom = compute_domination(my_total, enemy_total)
+    if dom < BEHIND_THRESHOLD:
+        mode = "behind"
+    elif dom > AHEAD_THRESHOLD:
+        mode = "ahead"
+    else:
+        mode = "neutral"
 
     # 全自惑星の防衛ステータスを事前計算
     defense_status: dict[int, tuple[str, int]] = {
@@ -55,6 +75,7 @@ def agent(obs):
             player,
             angular_velocity=angular_velocity,
             planned=planned,
+            mode=mode,
         )
         intercept_cands = enumerate_intercept_candidates(
             mine,

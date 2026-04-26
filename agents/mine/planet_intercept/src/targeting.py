@@ -19,8 +19,12 @@ from .utils import Planet, distance, fleet_speed
 NEUTRAL_OWNER = -1
 
 HOLD_HORIZON = 20.0
+HOLD_HORIZON_BEHIND = 4.0
 THREAT_MARGIN = 0.0
 TRAVEL_PENALTY = 0.0
+
+BEHIND_THRESHOLD = -0.3
+AHEAD_THRESHOLD = 0.3
 
 
 def ships_budget(target: Planet, my_eta: float = 0.0, already_sent: int = 0) -> int:
@@ -61,6 +65,14 @@ def compute_rival_eta(target: Planet, my_player: int, fleets, planets) -> float:
     return min(per.values()) if per else math.inf
 
 
+def compute_domination(my_total: int, enemy_total: int) -> float:
+    """domination スコア: (my - enemy) / (my + enemy)。範囲 [-1, 1]。"""
+    total = my_total + enemy_total
+    if total == 0:
+        return 0.0
+    return (my_total - enemy_total) / total
+
+
 def target_value(
     mine: Planet,
     target_x: float,
@@ -70,19 +82,21 @@ def target_value(
     ships_to_send: int,
     my_eta: float,
     target_owner: int = NEUTRAL_OWNER,
+    mode: str = "neutral",
 ) -> float:
     """占領価値。
 
     中立 (target_owner == NEUTRAL_OWNER):
-        rival 未脅威 -> production * HOLD_HORIZON - ships - my_eta * TRAVEL_PENALTY
+        rival 未脅威 -> production * horizon - ships - my_eta * TRAVEL_PENALTY
         rival 脅威あり -> production * max(0, rival_eta - my_eta) - ships
     敵惑星 (target_owner != NEUTRAL_OWNER):
         production * max(0, rival_eta - my_eta) - ships
     """
+    horizon = HOLD_HORIZON_BEHIND if mode == "behind" else HOLD_HORIZON
     threat = math.isfinite(rival_eta) and (rival_eta - my_eta) <= THREAT_MARGIN
     if target_owner == NEUTRAL_OWNER:
         if not threat:
-            return production * HOLD_HORIZON - ships_to_send - my_eta * TRAVEL_PENALTY
+            return production * horizon - ships_to_send - my_eta * TRAVEL_PENALTY
         return production * max(0.0, rival_eta - my_eta) - ships_to_send
     gain = production * max(0.0, rival_eta - my_eta)
     return gain - ships_to_send
@@ -96,6 +110,7 @@ def enumerate_candidates(
     top_n: int = 16,
     angular_velocity: float = 0.0,
     planned: dict | None = None,
+    mode: str = "neutral",
 ):
     """自分以外が所有する惑星をインターセプト位置で距離昇順ソートし上位 top_n 件を返す。
 
@@ -137,7 +152,8 @@ def enumerate_candidates(
         ships_needed = ships_budget(t, my_eta=my_eta, already_sent=already_sent)
         rival_eta = compute_rival_eta(t, player, fleets, all_planets)
         value = target_value(
-            my_planet, ix, iy, t.production, rival_eta, ships_needed, my_eta, target_owner=t.owner
+            my_planet, ix, iy, t.production, rival_eta, ships_needed, my_eta,
+            target_owner=t.owner, mode=mode,
         )
         out.append((t, ships_needed, angle, value))
     return out

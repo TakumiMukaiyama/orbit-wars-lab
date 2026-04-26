@@ -3,9 +3,12 @@ import math
 import pytest
 
 from src.targeting import (
+    AHEAD_THRESHOLD,
+    BEHIND_THRESHOLD,
     HOLD_HORIZON,
     NEUTRAL_OWNER,
     classify_defense,
+    compute_domination,
     compute_rival_eta,
     compute_rival_eta_per_player,
     enumerate_candidates,
@@ -421,3 +424,65 @@ class TestClassifyDefense:
         # incoming=45, mine.ships=40 < 45 -> doomed
         assert status == "doomed"
         assert reserve == 45
+
+
+class TestComputeDomination:
+    def test_equal_returns_zero(self):
+        dom = compute_domination(my_total=100, enemy_total=100)
+        assert dom == pytest.approx(0.0)
+
+    def test_all_mine_returns_one(self):
+        dom = compute_domination(my_total=100, enemy_total=0)
+        assert dom == pytest.approx(1.0)
+
+    def test_all_enemy_returns_minus_one(self):
+        dom = compute_domination(my_total=0, enemy_total=100)
+        assert dom == pytest.approx(-1.0)
+
+    def test_both_zero_returns_zero(self):
+        dom = compute_domination(my_total=0, enemy_total=0)
+        assert dom == pytest.approx(0.0)
+
+    def test_thresholds_exist_and_sign(self):
+        assert BEHIND_THRESHOLD < 0
+        assert AHEAD_THRESHOLD > 0
+
+
+class TestTargetValueWithMode:
+    def test_behind_mode_reduces_neutral_value(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        v_neutral = target_value(
+            mine, 20.0, 0.0, 3, math.inf, ships_to_send=7, my_eta=5.0,
+            target_owner=NEUTRAL_OWNER, mode="neutral",
+        )
+        v_behind = target_value(
+            mine, 20.0, 0.0, 3, math.inf, ships_to_send=7, my_eta=5.0,
+            target_owner=NEUTRAL_OWNER, mode="behind",
+        )
+        assert v_behind < v_neutral
+
+    def test_ahead_mode_same_as_neutral_for_neutral_planet(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        v_neutral = target_value(
+            mine, 20.0, 0.0, 3, math.inf, ships_to_send=7, my_eta=5.0,
+            target_owner=NEUTRAL_OWNER, mode="neutral",
+        )
+        v_ahead = target_value(
+            mine, 20.0, 0.0, 3, math.inf, ships_to_send=7, my_eta=5.0,
+            target_owner=NEUTRAL_OWNER, mode="ahead",
+        )
+        # ahead モードでは中立惑星の HOLD_HORIZON は変えない (敵惑星への積極性は別途)
+        assert v_ahead == pytest.approx(v_neutral)
+
+    def test_mode_does_not_affect_enemy_planet(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        v_behind = target_value(
+            mine, 20.0, 0.0, 3, rival_eta=100.0, ships_to_send=10, my_eta=5.0,
+            target_owner=1, mode="behind",
+        )
+        v_neutral = target_value(
+            mine, 20.0, 0.0, 3, rival_eta=100.0, ships_to_send=10, my_eta=5.0,
+            target_owner=1, mode="neutral",
+        )
+        # 敵惑星の価値式は mode によらない
+        assert v_behind == pytest.approx(v_neutral)
