@@ -97,7 +97,9 @@ def collect_rollout(
                 global_rows.append(batch.global_features[local_idx])
                 candidate_masks.append(batch.candidate_mask[local_idx])
                 values.append(float(row_values[global_idx]))
-                tgt_idx = int(sampled_target_index[global_idx]) if batch.self_features.shape[0] > 0 else 0
+                tgt_idx = (
+                    int(sampled_target_index[global_idx]) if batch.self_features.shape[0] > 0 else 0
+                )
                 is_valid_send = (
                     tgt_idx > 0
                     and tgt_idx < len(context.candidate_ids)
@@ -105,7 +107,9 @@ def collect_rollout(
                     and int(context.ship_counts[tgt_idx]) > 0
                 )
                 target_indices.append(tgt_idx)
-                log_probs.append(float(sampled_log_prob[global_idx]) if batch.self_features.shape[0] > 0 else 0.0)
+                log_probs.append(
+                    float(sampled_log_prob[global_idx]) if batch.self_features.shape[0] > 0 else 0.0
+                )
                 group_indices.append(len(values) - 1)
                 if not is_valid_send:
                     continue
@@ -116,7 +120,9 @@ def collect_rollout(
                 moves.append([context.source_id, float(context.target_angles[tgt_idx]), ships])
             result = env.step(moves)
             running_episode_rewards[env_idx] += float(result.reward)
-            groups_per_env[env_idx].append(StepGroup(indices=group_indices, reward=float(result.reward), done=result.done))
+            groups_per_env[env_idx].append(
+                StepGroup(indices=group_indices, reward=float(result.reward), done=result.done)
+            )
             if result.done:
                 episode_rewards.append(running_episode_rewards[env_idx])
                 running_episode_rewards[env_idx] = 0.0
@@ -138,12 +144,20 @@ def collect_rollout(
                 returns[idx] = future_return
                 advantages[idx] = future_return - values[idx]
     batch = TransitionBatch(
-        self_features=torch.from_numpy(np.asarray(self_rows, dtype=np.float32).reshape(-1, self_feature_dim())),
-        candidate_features=torch.from_numpy(
-            np.asarray(candidate_rows, dtype=np.float32).reshape(-1, empty_candidate[0], empty_candidate[1])
+        self_features=torch.from_numpy(
+            np.asarray(self_rows, dtype=np.float32).reshape(-1, self_feature_dim())
         ),
-        global_features=torch.from_numpy(np.asarray(global_rows, dtype=np.float32).reshape(-1, global_feature_dim())),
-        candidate_mask=torch.from_numpy(np.asarray(candidate_masks, dtype=bool).reshape(-1, cfg.env.candidate_count)),
+        candidate_features=torch.from_numpy(
+            np.asarray(candidate_rows, dtype=np.float32).reshape(
+                -1, empty_candidate[0], empty_candidate[1]
+            )
+        ),
+        global_features=torch.from_numpy(
+            np.asarray(global_rows, dtype=np.float32).reshape(-1, global_feature_dim())
+        ),
+        candidate_mask=torch.from_numpy(
+            np.asarray(candidate_masks, dtype=bool).reshape(-1, cfg.env.candidate_count)
+        ),
         target_index=torch.tensor(target_indices, dtype=torch.long),
         log_prob=torch.tensor(log_probs, dtype=torch.float32),
         returns=torch.tensor(returns, dtype=torch.float32),
@@ -157,7 +171,9 @@ def collect_rollout(
     return batch, batches, next_seed, stats
 
 
-def bootstrap_values(policy: PlanetPolicy, batches: list[TurnBatch], device: torch.device) -> list[float]:
+def bootstrap_values(
+    policy: PlanetPolicy, batches: list[TurnBatch], device: torch.device
+) -> list[float]:
     merged = merge_batches(batches)
     if merged.self_features.shape[0] == 0:
         return [0.0 for _ in batches]
@@ -190,7 +206,9 @@ def merge_batches(batches: list[TurnBatch]) -> TurnBatch:
     candidate_rows = (
         np.concatenate([batch.candidate_features for batch in batches], axis=0)
         if has_rows
-        else np.zeros((0, batches[0].candidate_features.shape[1], candidate_feature_dim()), dtype=np.float32)
+        else np.zeros(
+            (0, batches[0].candidate_features.shape[1], candidate_feature_dim()), dtype=np.float32
+        )
     )
     global_rows = (
         np.concatenate([batch.global_features for batch in batches], axis=0)
@@ -273,7 +291,9 @@ def main() -> None:
     optimizer = torch.optim.Adam(policy.parameters(), lr=cfg.ppo.lr)
     save_dir = Path(cfg.save_dir)
     for update in range(1, cfg.ppo.total_updates + 1):
-        batch, batches, next_seed, stats = collect_rollout(envs, batches, policy, cfg, device, next_seed)
+        batch, batches, next_seed, stats = collect_rollout(
+            envs, batches, policy, cfg, device, next_seed
+        )
         metrics = ppo_update(
             policy,
             optimizer,

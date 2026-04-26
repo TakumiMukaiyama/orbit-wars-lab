@@ -66,7 +66,11 @@ class PlanetPolicy(nn.Module):
         expanded_global = global_hidden.unsqueeze(1).expand(-1, self.candidate_count, -1)
         joint = torch.cat([expanded_self, expanded_global, candidate_hidden], dim=-1)
         target_logits = self.target_head(joint).squeeze(-1)
-        target_logits = target_logits.masked_fill(~candidate_mask, torch.finfo(target_logits.dtype).min)
+        target_logits = target_logits.masked_fill(
+            ~candidate_mask, torch.finfo(target_logits.dtype).min
+        )
         pooled_candidates = candidate_hidden.mean(dim=1)
-        value = self.value_head(torch.cat([self_hidden, global_hidden, pooled_candidates], dim=-1)).squeeze(-1)
+        value = self.value_head(
+            torch.cat([self_hidden, global_hidden, pooled_candidates], dim=-1)
+        ).squeeze(-1)
         return PolicyOutput(target_logits=target_logits, value=value)

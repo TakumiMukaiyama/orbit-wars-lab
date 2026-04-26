@@ -1,4 +1,5 @@
 """Save/load replay JSON (native env.toJSON() format from kaggle-environments)."""
+
 from __future__ import annotations
 
 import json
@@ -18,9 +19,7 @@ def make_match_filename(match_id: int, agent_ids: list[str]) -> str:
     return f"{match_id:03d}-{joined}.json"
 
 
-def save_replay(
-    replays_dir: Path, match_id: int, agent_ids: list[str], replay: Any
-) -> Path:
+def save_replay(replays_dir: Path, match_id: int, agent_ids: list[str], replay: Any) -> Path:
     """Write replay JSON. Overwrites if exists. Returns path."""
     replays_dir.mkdir(parents=True, exist_ok=True)
     path = replays_dir / make_match_filename(match_id, agent_ids)

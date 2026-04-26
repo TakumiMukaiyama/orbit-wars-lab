@@ -1,0 +1,33 @@
+[tools]
+python = "3.13"
+
+[tasks.test]
+description = "ローカルテスト。引数例: --games 10 --vs random self --verbose"
+run = "uv run python scripts/test_local.py"
+
+[tasks.submit]
+description = "src/ を tar.gz にまとめて Kaggle に提出する"
+run = """
+tar -czf submission.tar.gz main.py src/
+uv run kaggle competitions submit orbit-wars -f submission.tar.gz -m "${MSG:-submission}"
+"""
+
+[tasks.submissions]
+description = "提出履歴を確認する"
+run = "uv run kaggle competitions submissions orbit-wars"
+
+[tasks.leaderboard]
+description = "リーダーボードを表示する"
+run = "uv run kaggle competitions leaderboard orbit-wars -s"
+
+[tasks.episodes]
+description = "エピソード一覧を表示する (SUBMISSION_ID=<id> が必要)"
+run = "uv run kaggle competitions episodes ${SUBMISSION_ID}"
+
+[tasks.replay]
+description = "リプレイを取得する (EPISODE_ID=<id> が必要)"
+run = "uv run kaggle competitions replay ${EPISODE_ID} -p ./replays"
+
+[tasks.logs]
+description = "エージェントのログを取得する (EPISODE_ID=<id>, AGENT=0 が必要)"
+run = "uv run kaggle competitions logs ${EPISODE_ID} ${AGENT:-0} -p ./logs"

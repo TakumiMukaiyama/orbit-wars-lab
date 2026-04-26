@@ -1,4 +1,5 @@
 """Tournament runner — round-robin pairs, K games each, persistent TrueSkill."""
+
 from __future__ import annotations
 
 import argparse
@@ -86,9 +87,7 @@ class Tournament:
         replays_dir.mkdir()
 
         started_at = datetime.now(timezone.utc).isoformat()
-        self._write_run_json(
-            run_dir, run_id, started_at, None, "running", total_matches, 0
-        )
+        self._write_run_json(run_dir, run_id, started_at, None, "running", total_matches, 0)
 
         persistent_path = self.runs_root / "trueskill.json"
         store = TrueSkillStore(persistent_path)
@@ -115,9 +114,7 @@ class Tournament:
 
                     replay_rel = ""
                     if outcome.replay and "steps" in outcome.replay:
-                        rp = save_replay(
-                            replays_dir, match_counter, aids, outcome.replay
-                        )
+                        rp = save_replay(replays_dir, match_counter, aids, outcome.replay)
                         replay_rel = str(rp.relative_to(run_dir))
 
                     if outcome.status != "agent_failed_to_start":
@@ -154,30 +151,45 @@ class Tournament:
 
             finished_at = datetime.now(timezone.utc).isoformat()
             self._write_run_json(
-                run_dir, run_id, started_at, finished_at, status,
-                total_matches, match_counter,
+                run_dir,
+                run_id,
+                started_at,
+                finished_at,
+                status,
+                total_matches,
+                match_counter,
             )
 
             # config + results always written (partial on abort)
-            (run_dir / "config.json").write_text(json.dumps({
-                "mode": self.config.mode,
-                "format": self.config.format,
-                "games_per_pair": self.config.games_per_pair,
-                "agents": self.config.agents,
-                "seed_base": self.config.seed_base,
-                "parallel": self.config.parallel,
-                "started_at": started_at,
-            }, indent=2))
+            (run_dir / "config.json").write_text(
+                json.dumps(
+                    {
+                        "mode": self.config.mode,
+                        "format": self.config.format,
+                        "games_per_pair": self.config.games_per_pair,
+                        "agents": self.config.agents,
+                        "seed_base": self.config.seed_base,
+                        "parallel": self.config.parallel,
+                        "started_at": started_at,
+                    },
+                    indent=2,
+                )
+            )
 
             summary = self._build_summary(matches)
-            (run_dir / "results.json").write_text(json.dumps({
-                "started_at": started_at,
-                "finished_at": finished_at,
-                "total_matches": total_matches,
-                "matches": [m.model_dump() for m in matches],
-                "summary": summary,
-                "status": status,
-            }, indent=2))
+            (run_dir / "results.json").write_text(
+                json.dumps(
+                    {
+                        "started_at": started_at,
+                        "finished_at": finished_at,
+                        "total_matches": total_matches,
+                        "matches": [m.model_dump() for m in matches],
+                        "summary": summary,
+                        "status": status,
+                    },
+                    indent=2,
+                )
+            )
 
             # 'latest' symlink (best-effort)
             latest = self.runs_root / "latest"
@@ -223,10 +235,7 @@ class Tournament:
         """YYYY-MM-DD-NNN — N increments for runs created the same day."""
         now = datetime.now(timezone.utc)
         prefix = now.strftime("%Y-%m-%d")
-        existing = [
-            p for p in self.runs_root.iterdir()
-            if p.is_dir() and p.name.startswith(prefix)
-        ]
+        existing = [p for p in self.runs_root.iterdir() if p.is_dir() and p.name.startswith(prefix)]
         n = len(existing) + 1
         return f"{prefix}-{n:03d}"
 
@@ -245,9 +254,7 @@ class Tournament:
                     f"Available: {sorted(all_agents)}"
                 )
             if info.disabled:
-                raise ValueError(
-                    f"Agent {aid!r} is disabled; remove from config or un-disable"
-                )
+                raise ValueError(f"Agent {aid!r} is disabled; remove from config or un-disable")
             out.append({"id": info.id, "path": info.path})
         return out
 
@@ -286,9 +293,7 @@ class Tournament:
         for m in matches:
             total_duration += m.duration_s
             for aid in m.agent_ids:
-                stats = agent_stats.setdefault(
-                    aid, {"wins": 0, "losses": 0, "draws": 0}
-                )
+                stats = agent_stats.setdefault(aid, {"wins": 0, "losses": 0, "draws": 0})
                 if m.winner is None:
                     stats["draws"] += 1
                 elif m.winner == aid:
@@ -389,7 +394,10 @@ def _cmd_run(args):
         agents = [a.id for a in zoo if not a.disabled]
 
     if not agents:
-        print("No agents selected (check --agents / --bucket / --tag / --exclude-tag)", file=sys.stderr)
+        print(
+            "No agents selected (check --agents / --bucket / --tag / --exclude-tag)",
+            file=sys.stderr,
+        )
         sys.exit(1)
     min_agents = 4 if args.format == "4p" else 2
     if len(agents) < min_agents:
@@ -445,8 +453,10 @@ def _cmd_gauntlet(args):
         sys.exit(1)
     min_opponents = 3 if args.format == "4p" else 1
     if len(opponents) < min_opponents:
-        print(f"Format {args.format} gauntlet needs ≥{min_opponents} opponents, got {len(opponents)}",
-              file=sys.stderr)
+        print(
+            f"Format {args.format} gauntlet needs ≥{min_opponents} opponents, got {len(opponents)}",
+            file=sys.stderr,
+        )
         sys.exit(1)
 
     args.runs.mkdir(parents=True, exist_ok=True)
@@ -496,37 +506,65 @@ def main():
 
     p_run = sub.add_parser("run", help="Run a tournament")
     p_run.add_argument("--agents", nargs="*", default=[], help="Explicit agent IDs")
-    p_run.add_argument("--bucket", default="", help="Comma-separated buckets (baselines,external,mine)")
     p_run.add_argument(
-        "--tag", action="append", default=[],
-        help="Include agents with this tag (repeatable = OR). "
-             "Example: --tag benchmark --tag quick → benchmark OR quick",
+        "--bucket", default="", help="Comma-separated buckets (baselines,external,mine)"
     )
     p_run.add_argument(
-        "--exclude-tag", action="append", default=[], dest="exclude_tag",
+        "--tag",
+        action="append",
+        default=[],
+        help="Include agents with this tag (repeatable = OR). "
+        "Example: --tag benchmark --tag quick → benchmark OR quick",
+    )
+    p_run.add_argument(
+        "--exclude-tag",
+        action="append",
+        default=[],
+        dest="exclude_tag",
         help="Exclude agents with this tag (repeatable = AND). "
-             "Example: --exclude-tag broken --exclude-tag slow",
+        "Example: --exclude-tag broken --exclude-tag slow",
     )
     p_run.add_argument("--games-per-pair", type=int, default=3, help="K games per pair (default 3)")
-    p_run.add_argument("--mode", choices=["fast", "faithful"], default="fast",
-                       help="fast=in-process, faithful=subprocess+HTTP (Kaggle protocol)")
-    p_run.add_argument("--format", choices=["2p", "4p"], default="2p",
-                       help="Match format — 2-player or 4-player FFA (default 2p)")
+    p_run.add_argument(
+        "--mode",
+        choices=["fast", "faithful"],
+        default="fast",
+        help="fast=in-process, faithful=subprocess+HTTP (Kaggle protocol)",
+    )
+    p_run.add_argument(
+        "--format",
+        choices=["2p", "4p"],
+        default="2p",
+        help="Match format — 2-player or 4-player FFA (default 2p)",
+    )
     p_run.add_argument("--parallel", type=int, default=1, help="Parallel matches (fast mode only)")
     p_run.add_argument("--seed", type=int, default=42, help="Base seed for match randomness")
     p_run.set_defaults(func=_cmd_run)
 
     p_g = sub.add_parser("gauntlet", help="One challenger vs every other agent (× K games)")
     p_g.add_argument("challenger", help="Challenger agent ID (e.g. mine/v1-my-bot)")
-    p_g.add_argument("--agents", nargs="*", default=[], help="Explicit opponent IDs (excludes challenger)")
+    p_g.add_argument(
+        "--agents", nargs="*", default=[], help="Explicit opponent IDs (excludes challenger)"
+    )
     p_g.add_argument("--bucket", default="", help="Comma-separated buckets for opponents")
     p_g.add_argument("--tag", action="append", default=[], help="Include opponents with this tag")
-    p_g.add_argument("--exclude-tag", action="append", default=[], dest="exclude_tag",
-                     help="Exclude opponents with this tag")
-    p_g.add_argument("--games-per-pair", type=int, default=10, help="K games per opponent (default 10)")
+    p_g.add_argument(
+        "--exclude-tag",
+        action="append",
+        default=[],
+        dest="exclude_tag",
+        help="Exclude opponents with this tag",
+    )
+    p_g.add_argument(
+        "--games-per-pair", type=int, default=10, help="K games per opponent (default 10)"
+    )
     p_g.add_argument("--mode", choices=["fast", "faithful"], default="fast")
-    p_g.add_argument("--format", choices=["2p", "4p"], default="2p",
-                     help="2p: challenger vs 1 opponent. 4p: challenger + 3 opponents per match.")
+    p_g.add_argument(
+        "--format",
+        choices=["2p", "4p"],
+        default="2p",
+        help="2p: challenger vs 1 opponent. 4p: challenger + 3 opponents per match.",
+    )
     p_g.add_argument("--seed", type=int, default=42)
     p_g.set_defaults(func=_cmd_gauntlet)
 
@@ -534,8 +572,12 @@ def main():
     p_h2h.add_argument("agent_a", help="First agent ID (player 0)")
     p_h2h.add_argument("agent_b", help="Second agent ID (player 1)")
     p_h2h.add_argument("--games", type=int, default=10, help="Number of games (default 10)")
-    p_h2h.add_argument("--mode", choices=["fast", "faithful"], default="fast",
-                       help="fast=in-process, faithful=subprocess+HTTP")
+    p_h2h.add_argument(
+        "--mode",
+        choices=["fast", "faithful"],
+        default="fast",
+        help="fast=in-process, faithful=subprocess+HTTP",
+    )
     p_h2h.add_argument("--seed", type=int, default=42, help="Base seed")
     p_h2h.set_defaults(func=_cmd_head_to_head)
 

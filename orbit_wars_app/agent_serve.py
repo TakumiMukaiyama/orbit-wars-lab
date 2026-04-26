@@ -9,6 +9,7 @@ Protocol:
 
 1:1 compatible with kaggle-environments UrlAgent (agent.py).
 """
+
 from __future__ import annotations
 
 import argparse

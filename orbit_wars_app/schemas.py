@@ -1,4 +1,5 @@
 """Pydantic models for Orbit Wars Lab."""
+
 from __future__ import annotations
 
 from typing import Literal, Optional
@@ -10,9 +11,7 @@ Bucket = Literal["baselines", "external", "mine"]
 Format = Literal["2p", "4p"]
 Mode = Literal["fast", "faithful"]
 TournamentShape = Literal["round-robin", "gauntlet"]
-MatchStatus = Literal[
-    "ok", "timeout", "crashed", "agent_failed_to_start", "invalid_action", "draw"
-]
+MatchStatus = Literal["ok", "timeout", "crashed", "agent_failed_to_start", "invalid_action", "draw"]
 RunStatus = Literal["running", "completed", "aborted"]
 
 

@@ -1,4 +1,5 @@
 """Spawn agent subprocess, handshake via stdout JSON, manage lifecycle."""
+
 from __future__ import annotations
 
 import json
@@ -99,9 +100,7 @@ def spawn_agent(
             raise RuntimeError(f"Agent {agent_id!r} reported error: {msg.get('reason')}")
 
     proc.kill()
-    raise TimeoutError(
-        f"Agent {agent_id!r} did not emit 'ready' within {startup_timeout}s"
-    )
+    raise TimeoutError(f"Agent {agent_id!r} did not emit 'ready' within {startup_timeout}s")
 
 
 def shutdown(handle: AgentHandle, grace: float = 2.0) -> None:

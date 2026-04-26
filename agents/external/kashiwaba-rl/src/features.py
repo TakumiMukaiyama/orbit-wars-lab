@@ -54,11 +54,16 @@ def encode_turn(
     env_index: int = 0,
 ) -> TurnBatch:
     state = observation if isinstance(observation, GameState) else parse_observation(observation)
-    my_planets = sorted((planet for planet in state.planets if planet.owner == state.player), key=lambda planet: planet.id)
+    my_planets = sorted(
+        (planet for planet in state.planets if planet.owner == state.player),
+        key=lambda planet: planet.id,
+    )
     if not my_planets:
         return TurnBatch(
             self_features=np.zeros((0, self_feature_dim()), dtype=np.float32),
-            candidate_features=np.zeros((0, env_cfg.candidate_count, candidate_feature_dim()), dtype=np.float32),
+            candidate_features=np.zeros(
+                (0, env_cfg.candidate_count, candidate_feature_dim()), dtype=np.float32
+            ),
             global_features=np.zeros((0, global_feature_dim()), dtype=np.float32),
             candidate_mask=np.zeros((0, env_cfg.candidate_count), dtype=bool),
             contexts=[],
@@ -250,14 +255,15 @@ def shot_crosses_sun(src: PlanetState, angle: float, tgt: PlanetState) -> bool:
     return point_to_segment_distance(BOARD_CENTER, (start_x, start_y), (tgt.x, tgt.y)) < SUN_RADIUS
 
 
-def point_to_segment_distance(point: tuple[float, float], start: tuple[float, float], end: tuple[float, float]) -> float:
+def point_to_segment_distance(
+    point: tuple[float, float], start: tuple[float, float], end: tuple[float, float]
+) -> float:
     segment_len_sq = (start[0] - end[0]) ** 2 + (start[1] - end[1]) ** 2
     if segment_len_sq == 0.0:
         return math.hypot(point[0] - start[0], point[1] - start[1])
     projection = (
-        ((point[0] - start[0]) * (end[0] - start[0]) + (point[1] - start[1]) * (end[1] - start[1]))
-        / segment_len_sq
-    )
+        (point[0] - start[0]) * (end[0] - start[0]) + (point[1] - start[1]) * (end[1] - start[1])
+    ) / segment_len_sq
     projection = max(0.0, min(1.0, projection))
     closest_x = start[0] + projection * (end[0] - start[0])
     closest_y = start[1] + projection * (end[1] - start[1])

@@ -11,8 +11,7 @@ from .ppo import sample_actions
 
 
 class OpponentPolicy(Protocol):
-    def act(self, observation: Any) -> list[list[float | int]]:
-        ...
+    def act(self, observation: Any) -> list[list[float | int]]: ...
 
 
 class KaggleRandomOpponent:

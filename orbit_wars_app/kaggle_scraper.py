@@ -9,6 +9,7 @@ Storage layout:
 
 No authentication required — endpoints accept anonymous requests.
 """
+
 from __future__ import annotations
 
 import json
@@ -40,9 +41,7 @@ def _build_session() -> requests.Session:
     return session
 
 
-def _post_json(
-    session: requests.Session, endpoint: str, payload: dict, timeout: int
-) -> dict:
+def _post_json(session: requests.Session, endpoint: str, payload: dict, timeout: int) -> dict:
     response = session.post(endpoint, json=payload, timeout=timeout)
     response.raise_for_status()
     return response.json()
@@ -72,6 +71,7 @@ def fetch_replay(session: requests.Session, episode_id: int) -> dict:
 # ============================================================
 # Job tracking for async scrape (POST /api/replays/scrape)
 # ============================================================
+
 
 @dataclass
 class ScrapeJob:
@@ -131,9 +131,7 @@ def scrape_submission(
         logger.info("Got %d episodes; will download up to %d", len(episodes), count)
 
         # Write metadata snapshot (list of all episodes available)
-        (out_dir / "_metadata.json").write_text(
-            json.dumps(episodes, indent=2), encoding="utf-8"
-        )
+        (out_dir / "_metadata.json").write_text(json.dumps(episodes, indent=2), encoding="utf-8")
 
         to_download = episodes[: max(0, count)]
         job.total = len(to_download)
@@ -147,9 +145,7 @@ def scrape_submission(
                 continue
             try:
                 payload = fetch_replay(session, ep_id)
-                replay_path.write_text(
-                    json.dumps(payload), encoding="utf-8"
-                )
+                replay_path.write_text(json.dumps(payload), encoding="utf-8")
                 job.downloaded += 1
                 job.replay_ids.append(ep_id)
             except Exception as e:
@@ -192,7 +188,9 @@ def _extract_meta(payload: dict, episode_id: int) -> dict:
         "team_names": team_names,
         "rewards": rewards,
         "winner_idx": winner_idx,
-        "winner": team_names[winner_idx] if winner_idx is not None and winner_idx < len(team_names) else None,
+        "winner": team_names[winner_idx]
+        if winner_idx is not None and winner_idx < len(team_names)
+        else None,
     }
 
 

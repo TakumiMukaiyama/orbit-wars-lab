@@ -19,7 +19,7 @@ def fleet_speed(ships):
         return 1.0
     ratio = math.log(ships) / math.log(1000.0)
     ratio = max(0.0, min(1.0, ratio))
-    return 1.0 + (MAX_SPEED - 1.0) * (ratio ** 1.5)
+    return 1.0 + (MAX_SPEED - 1.0) * (ratio**1.5)
 
 
 def segment_hits_sun(x1, y1, x2, y2, safety=SUN_SAFETY):
@@ -76,8 +76,7 @@ def predict_planet_position(planet, initial_by_id, angular_velocity, turns):
         return planet.x, planet.y
     cur_ang = math.atan2(planet.y - CENTER_Y, planet.x - CENTER_X)
     new_ang = cur_ang + angular_velocity * turns
-    return (CENTER_X + orbital_r * math.cos(new_ang),
-            CENTER_Y + orbital_r * math.sin(new_ang))
+    return (CENTER_X + orbital_r * math.cos(new_ang), CENTER_Y + orbital_r * math.sin(new_ang))
 
 
 def predict_comet_position(planet_id, comets, turns):
@@ -175,7 +174,9 @@ def incoming_to_planet(planet, fleets):
 
 def simulate_planet_outcome(planet, arrivals, player, horizon):
     if not arrivals:
-        return planet.ships + (planet.production * horizon if planet.owner == player else 0), planet.owner
+        return planet.ships + (
+            planet.production * horizon if planet.owner == player else 0
+        ), planet.owner
     events = sorted(arrivals, key=lambda a: a[0])
     garrison = planet.ships
     owner = planet.owner
@@ -296,7 +297,9 @@ def agent(obs):
             inbound_enemy[tgt.id] = inbound_enemy.get(tgt.id, 0) + int(f.ships)
 
     enemy_planets = [p for p in planets if p.owner != player and p.owner != -1]
-    enemy_total = sum(p.ships for p in enemy_planets) + sum(int(f.ships) for f in fleets if f.owner != player)
+    enemy_total = sum(p.ships for p in enemy_planets) + sum(
+        int(f.ships) for f in fleets if f.owner != player
+    )
 
     moves = []
 
@@ -342,7 +345,9 @@ def agent(obs):
             if est_needed > available[src.id]:
                 continue
 
-            aim = aim_with_prediction(src, tgt, est_needed, initial_by_id, ang_vel, comets, comet_ids)
+            aim = aim_with_prediction(
+                src, tgt, est_needed, initial_by_id, ang_vel, comets, comet_ids
+            )
             if aim is None:
                 continue
             angle, turns, _, _ = aim
@@ -351,9 +356,9 @@ def agent(obs):
             if ships_needed > available[src.id]:
                 continue
 
-            if segment_hits_sun(src.x, src.y,
-                                src.x + math.cos(angle) * 3,
-                                src.y + math.sin(angle) * 3, safety=0.3):
+            if segment_hits_sun(
+                src.x, src.y, src.x + math.cos(angle) * 3, src.y + math.sin(angle) * 3, safety=0.3
+            ):
                 continue
 
             value = target_value(tgt, turns)
@@ -415,16 +420,18 @@ def agent(obs):
             if aim is None:
                 continue
             angle, turns, _, _ = aim
-            if segment_hits_sun(src.x, src.y,
-                                src.x + math.cos(angle) * 3,
-                                src.y + math.sin(angle) * 3, safety=0.3):
+            if segment_hits_sun(
+                src.x, src.y, src.x + math.cos(angle) * 3, src.y + math.sin(angle) * 3, safety=0.3
+            ):
                 continue
             moves.append([src.id, float(angle), int(ships)])
             available[src.id] -= ships
             inbound_friendly[tgt.id] = inbound_friendly.get(tgt.id, 0) + ships
 
     if enemy_planets and len(my_planets) > 1 and not is_late:
-        front_dist = {mp.id: min(dist(mp.x, mp.y, e.x, e.y) for e in enemy_planets) for mp in my_planets}
+        front_dist = {
+            mp.id: min(dist(mp.x, mp.y, e.x, e.y) for e in enemy_planets) for mp in my_planets
+        }
         front = min(my_planets, key=lambda p: front_dist[p.id])
         for r in my_planets:
             if r.id == front.id:
@@ -442,9 +449,9 @@ def agent(obs):
             angle, turns, _, _ = aim
             if turns > 35:
                 continue
-            if segment_hits_sun(r.x, r.y,
-                                r.x + math.cos(angle) * 3,
-                                r.y + math.sin(angle) * 3, safety=0.3):
+            if segment_hits_sun(
+                r.x, r.y, r.x + math.cos(angle) * 3, r.y + math.sin(angle) * 3, safety=0.3
+            ):
                 continue
             moves.append([r.id, float(angle), int(send)])
             available[r.id] -= send

@@ -171,12 +171,8 @@ HEAVY_ROUTE_PLANET_LIMIT = 32
 # Shared Types
 # ============================================================
 
-Planet = namedtuple(
-    "Planet", ["id", "owner", "x", "y", "radius", "ships", "production"]
-)
-Fleet = namedtuple(
-    "Fleet", ["id", "owner", "x", "y", "angle", "from_planet_id", "ships"]
-)
+Planet = namedtuple("Planet", ["id", "owner", "x", "y", "radius", "ships", "production"])
+Fleet = namedtuple("Fleet", ["id", "owner", "x", "y", "angle", "from_planet_id", "ships"])
 
 
 @dataclass(frozen=True)
@@ -204,6 +200,7 @@ class Mission:
 # ============================================================
 # Physics
 # ============================================================
+
 
 def dist(ax, ay, bx, by):
     return math.hypot(ax - bx, ay - by)
@@ -479,6 +476,7 @@ def aim_with_prediction(src, target, ships, initial_by_id, ang_vel, comets, come
 # World Model
 # ============================================================
 
+
 def fleet_target_planet(fleet, planets):
     # Project in-flight fleets by ray-circle hit timing to build a usable
     # arrival ledger.
@@ -738,9 +736,7 @@ class WorldModel:
         )
         self.my_prod = self.owner_production.get(player, 0)
         self.enemy_prod = sum(
-            production
-            for owner, production in self.owner_production.items()
-            if owner != player
+            production for owner, production in self.owner_production.items() if owner != player
         )
 
         self.arrivals_by_planet = build_arrival_ledger(fleets, planets)
@@ -817,11 +813,7 @@ class WorldModel:
             cache = {}
             self.probe_candidate_cache = cache
         source_cap = max(1, int(source_cap))
-        normalized_hints = tuple(
-            int(math.ceil(hint))
-            for hint in hints
-            if hint is not None
-        )
+        normalized_hints = tuple(int(math.ceil(hint)) for hint in hints if hint is not None)
         cache_key = (src_id, target_id, source_cap, normalized_hints)
         cached = cache.get(cache_key)
         if cached is not None:
@@ -947,14 +939,10 @@ class WorldModel:
             return state_at_timeline(self.base_timeline[target_id], cutoff)
 
         arrivals = [
-            item
-            for item in self.arrivals_by_planet.get(target_id, [])
-            if item[0] <= cutoff
+            item for item in self.arrivals_by_planet.get(target_id, []) if item[0] <= cutoff
         ]
         arrivals.extend(
-            item
-            for item in planned_commitments.get(target_id, [])
-            if item[0] <= cutoff
+            item for item in planned_commitments.get(target_id, []) if item[0] <= cutoff
         )
         arrivals.extend(item for item in extra_arrivals if item[0] <= cutoff)
 
@@ -1179,6 +1167,7 @@ class WorldModel:
 # Strategy
 # ============================================================
 
+
 def planet_distance(first, second):
     return math.hypot(first.x - second.x, first.y - second.y)
 
@@ -1311,7 +1300,9 @@ def build_policy_state(world, deadline=None):
         if target.owner == world.player:
             continue
         my_sources = nearest_sources_to_target(target, world.my_planets, REACTION_SOURCE_TOP_K_MY)
-        enemy_sources = nearest_sources_to_target(target, world.enemy_planets, REACTION_SOURCE_TOP_K_ENEMY)
+        enemy_sources = nearest_sources_to_target(
+            target, world.enemy_planets, REACTION_SOURCE_TOP_K_ENEMY
+        )
         my_t = min_legal_reaction_time(target, my_sources, world)
         enemy_t = min_legal_reaction_time(target, enemy_sources, world)
         reaction_time_map[target.id] = (my_t, enemy_t)
@@ -1421,7 +1412,9 @@ def opening_filter(target, arrival_turns, needed, src_available, world, policy):
             return False
         return True
 
-    return arrival_turns > ROTATING_OPENING_MAX_TURNS or target.production <= ROTATING_OPENING_LOW_PROD
+    return (
+        arrival_turns > ROTATING_OPENING_MAX_TURNS or target.production <= ROTATING_OPENING_LOW_PROD
+    )
 
 
 def target_value(target, arrival_turns, mission, world, modes, policy):
@@ -1441,7 +1434,9 @@ def target_value(target, arrival_turns, mission, world, modes, policy):
         value *= ROTATING_OPENING_VALUE_MULT if world.is_opening else 1.0
 
     if target.owner not in (-1, world.player):
-        value *= OPENING_HOSTILE_TARGET_VALUE_MULT if world.is_opening else HOSTILE_TARGET_VALUE_MULT
+        value *= (
+            OPENING_HOSTILE_TARGET_VALUE_MULT if world.is_opening else HOSTILE_TARGET_VALUE_MULT
+        )
 
     if target.owner == -1:
         if is_safe_neutral(target, policy):
@@ -1485,7 +1480,10 @@ def target_value(target, arrival_turns, mission, world, modes, policy):
 def reinforce_value(target, hold_until, world, policy):
     saved_turns = max(1, world.remaining_steps - hold_until)
     value = target.production * saved_turns + max(0, target.ships) * DEFENSE_SHIP_VALUE
-    if world.enemy_planets and nearest_distance_to_set(target.x, target.y, world.enemy_planets) < 22:
+    if (
+        world.enemy_planets
+        and nearest_distance_to_set(target.x, target.y, world.enemy_planets) < 22
+    ):
         value *= DEFENSE_FRONTIER_SCORE_MULT
     value += policy["indirect_wealth_map"][target.id] * saved_turns * INDIRECT_VALUE_SCALE * 0.35
     return value * REINFORCE_VALUE_MULT
@@ -1563,9 +1561,7 @@ def settle_plan(
     seed_hint = max(1, min(src_cap, int(send_guess)))
     eval_turn_fn = eval_turn_fn or (lambda turns: turns)
     anchor_tolerance = (
-        anchor_tolerance
-        if anchor_tolerance is not None
-        else (1 if mission == "snipe" else None)
+        anchor_tolerance if anchor_tolerance is not None else (1 if mission == "snipe" else None)
     )
     tested = {}
     tested_order = []
@@ -1609,7 +1605,9 @@ def settle_plan(
                 src_cap,
                 max(
                     need,
-                    need + DEFENSE_SEND_MARGIN_BASE + target.production * DEFENSE_SEND_MARGIN_PROD_WEIGHT,
+                    need
+                    + DEFENSE_SEND_MARGIN_BASE
+                    + target.production * DEFENSE_SEND_MARGIN_PROD_WEIGHT,
                 ),
             )
         else:
@@ -1676,9 +1674,7 @@ def settle_plan(
     candidate_sends = sorted(
         [send for send in tested_order if tested.get(send) is not None],
         key=lambda send: (
-            0
-            if mission != "snipe" or anchor_turn is None
-            else abs(tested[send][1] - anchor_turn),
+            0 if mission != "snipe" or anchor_turn is None else abs(tested[send][1] - anchor_turn),
             abs(send - seed_hint),
             tested[send][1],
             send,
@@ -1947,7 +1943,10 @@ def build_rescue_missions(world, policy, planned_commitments, modes):
             angle, turns, _, need, send_pref = plan
             saved_turns = max(1, world.remaining_steps - fall_turn)
             value = target.production * saved_turns + max(0, target.ships) * DEFENSE_SHIP_VALUE
-            if world.enemy_planets and nearest_distance_to_set(target.x, target.y, world.enemy_planets) < 22:
+            if (
+                world.enemy_planets
+                and nearest_distance_to_set(target.x, target.y, world.enemy_planets) < 22
+            ):
                 value *= DEFENSE_FRONTIER_SCORE_MULT
             score = value / (send_pref + turns * DEFENSE_COST_TURN_WEIGHT + 1.0)
 
@@ -2027,7 +2026,10 @@ def build_recapture_missions(world, policy, planned_commitments, modes):
                 RECAPTURE_PRODUCTION_WEIGHT * target.production * saved_turns
                 + RECAPTURE_IMMEDIATE_WEIGHT * max(0, target.ships)
             )
-            if world.enemy_planets and nearest_distance_to_set(target.x, target.y, world.enemy_planets) < 22:
+            if (
+                world.enemy_planets
+                and nearest_distance_to_set(target.x, target.y, world.enemy_planets) < 22
+            ):
                 value *= RECAPTURE_FRONTIER_MULT
             value *= RECAPTURE_VALUE_MULT
             score = value / (send_pref + turns * RECAPTURE_COST_TURN_WEIGHT + 1.0)
@@ -2173,7 +2175,9 @@ def build_crash_exploit_missions(world, policy, planned_commitments, modes):
                 modes,
                 policy,
                 mission="crash_exploit",
-                eval_turn_fn=lambda turns, desired_arrival=desired_arrival: max(turns, desired_arrival),
+                eval_turn_fn=lambda turns, desired_arrival=desired_arrival: max(
+                    turns, desired_arrival
+                ),
                 anchor_turn=desired_arrival,
                 anchor_tolerance=CRASH_EXPLOIT_ETA_WINDOW,
             )
@@ -2285,7 +2289,12 @@ def plan_moves(world, deadline=None):
         return doomed
 
     def time_filters_pass(target, turns, needed, src_cap):
-        if not candidate_time_valid(target, turns, world, VERY_LATE_CAPTURE_BUFFER if world.is_very_late else LATE_CAPTURE_BUFFER):
+        if not candidate_time_valid(
+            target,
+            turns,
+            world,
+            VERY_LATE_CAPTURE_BUFFER if world.is_very_late else LATE_CAPTURE_BUFFER,
+        ):
             return False
         if opening_filter(target, turns, needed, src_cap, world, policy):
             return False
@@ -2375,7 +2384,8 @@ def plan_moves(world, deadline=None):
                         partial_value = target_value(target, p_turns, "swarm", world, modes, policy)
                         if partial_value > 0:
                             partial_score = apply_score_modifiers(
-                                partial_value / (partial_send_cap + p_turns * ATTACK_COST_TURN_WEIGHT + 1.0),
+                                partial_value
+                                / (partial_send_cap + p_turns * ATTACK_COST_TURN_WEIGHT + 1.0),
                                 target,
                                 "swarm",
                                 world,
@@ -2456,7 +2466,9 @@ def plan_moves(world, deadline=None):
                         )
                     )
 
-            snipe = build_snipe_mission(src, target, src_available, world, planned_commitments, modes, policy)
+            snipe = build_snipe_mission(
+                src, target, src_available, world, planned_commitments, modes, policy
+            )
             if snipe is not None:
                 missions.append(snipe)
 
@@ -2651,7 +2663,9 @@ def plan_moves(world, deadline=None):
                     modes,
                     policy,
                     mission="crash_exploit",
-                    eval_turn_fn=lambda turns, desired_arrival=option.anchor_turn: max(turns, desired_arrival),
+                    eval_turn_fn=lambda turns, desired_arrival=option.anchor_turn: max(
+                        turns, desired_arrival
+                    ),
                     anchor_turn=option.anchor_turn,
                     anchor_tolerance=CRASH_EXPLOIT_ETA_WINDOW,
                 )
@@ -2796,7 +2810,9 @@ def plan_moves(world, deadline=None):
                 if opening_filter(target, est_turns, rough_needed, src_left, world, policy):
                     continue
 
-                send = preferred_send(target, rough_needed, est_turns, src_left, world, modes, policy)
+                send = preferred_send(
+                    target, rough_needed, est_turns, src_left, world, modes, policy
+                )
                 if send < rough_needed:
                     continue
 
@@ -2940,7 +2956,9 @@ def plan_moves(world, deadline=None):
                 angle, turns, _, plan_need, send = plan
                 if send < plan_need:
                     continue
-                score = target_value(target, turns, "capture", world, modes, policy) / (send + turns + 1.0)
+                score = target_value(target, turns, "capture", world, modes, policy) / (
+                    send + turns + 1.0
+                )
                 if target.owner not in (-1, world.player):
                     score *= 1.05
                 if best_capture is None or score > best_capture[0]:
@@ -2992,9 +3010,7 @@ def plan_moves(world, deadline=None):
             planet.id: nearest_distance_to_set(planet.x, planet.y, frontier_targets)
             for planet in world.my_planets
         }
-        safe_fronts = [
-            planet for planet in world.my_planets if planet.id not in live_doomed
-        ]
+        safe_fronts = [planet for planet in world.my_planets if planet.id not in live_doomed]
         if safe_fronts:
             front_anchor = min(safe_fronts, key=lambda planet: frontier_distance[planet.id])
             send_ratio = (
@@ -3010,14 +3026,18 @@ def plan_moves(world, deadline=None):
                     continue
                 if source_attack_left(rear.id) < REAR_SOURCE_MIN_SHIPS:
                     continue
-                if frontier_distance[rear.id] < frontier_distance[front_anchor.id] * REAR_DISTANCE_RATIO:
+                if (
+                    frontier_distance[rear.id]
+                    < frontier_distance[front_anchor.id] * REAR_DISTANCE_RATIO
+                ):
                     continue
 
                 stage_candidates = [
                     planet
                     for planet in safe_fronts
                     if planet.id != rear.id
-                    and frontier_distance[planet.id] < frontier_distance[rear.id] * REAR_STAGE_PROGRESS
+                    and frontier_distance[planet.id]
+                    < frontier_distance[rear.id] * REAR_STAGE_PROGRESS
                 ]
                 if stage_candidates:
                     front = min(
@@ -3059,6 +3079,7 @@ def plan_moves(world, deadline=None):
 # ============================================================
 # Agent Entry Point
 # ============================================================
+
 
 def _read(obs, key, default=None):
     if isinstance(obs, dict):

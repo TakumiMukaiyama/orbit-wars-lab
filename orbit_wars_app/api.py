@@ -1,4 +1,5 @@
 """FastAPI route handlers."""
+
 from __future__ import annotations
 
 import asyncio
@@ -114,6 +115,7 @@ def get_run_progress(run_id: str) -> dict:
 # Replays — unified list (local tournament matches + Kaggle scrapes)
 # ============================================================
 
+
 @router.get("/replays")
 def list_replays(
     source: Literal["all", "local", "kaggle"] = "all",
@@ -200,9 +202,7 @@ def scrape_url(req: ScrapeUrlRequest) -> dict:
         # Accept both Kaggle URL shapes:
         #   /competitions/orbit-wars/episodes/<ep_id>?submissionId=<sub_id>
         #   /competitions/orbit-wars/leaderboard?episodeId=<ep_id>&submissionId=<sub_id>
-        m_ep = re.search(r"/episodes/(\d+)", url) or re.search(
-            r"[?&]episodeId=(\d+)", url
-        )
+        m_ep = re.search(r"/episodes/(\d+)", url) or re.search(r"[?&]episodeId=(\d+)", url)
         if not m_ep:
             raise HTTPException(
                 status_code=400,
@@ -241,9 +241,7 @@ def start_scrape(req: ScrapeRequest) -> dict:
     Returns {job_id}. Poll GET /replays/scrape/{job_id} for progress.
     """
     if req.count < 1 or req.count > 200:
-        raise HTTPException(
-            status_code=400, detail="count must be between 1 and 200"
-        )
+        raise HTTPException(status_code=400, detail="count must be between 1 and 200")
     if req.submission_id <= 0:
         raise HTTPException(status_code=400, detail="invalid submission_id")
 
@@ -315,9 +313,7 @@ def delete_local_replay(run_id: str, match_id: str) -> dict:
         raise HTTPException(status_code=404, detail=f"Run {run_id!r} not found")
     matches = list(replays_dir.glob(f"{match_id}-*.json"))
     if not matches:
-        raise HTTPException(
-            status_code=404, detail=f"Match {match_id!r} not found"
-        )
+        raise HTTPException(status_code=404, detail=f"Match {match_id!r} not found")
     for p in matches:
         p.unlink()
     return {"deleted": True, "run_id": run_id, "match_id": match_id}
@@ -393,9 +389,7 @@ def delete_run(run_id: str) -> dict:
 
 @router.get("/kaggle-replays/{submission_id}/{episode_id}")
 def get_kaggle_replay(submission_id: int, episode_id: int) -> dict:
-    path = (
-        _replays_root() / "kaggle" / str(submission_id) / f"episode_{episode_id}.json"
-    )
+    path = _replays_root() / "kaggle" / str(submission_id) / f"episode_{episode_id}.json"
     if not path.is_file():
         raise HTTPException(
             status_code=404,

@@ -1,4 +1,5 @@
 """Scan agents/ tree and return AgentInfo list."""
+
 from __future__ import annotations
 
 import logging
@@ -84,7 +85,8 @@ def _build_agent_info(bucket: str, agent_dir: Path, zoo_dir: Path) -> AgentInfo:
             _log.warning(
                 "Agent %s uses deprecated field '%s' in agent.yaml; "
                 "see docs/superpowers/specs/2026-04-21-agent-zoo-design.md",
-                agent_id, dep_field,
+                agent_id,
+                dep_field,
             )
 
     # Parse kernel_version as int if present
@@ -105,7 +107,9 @@ def _build_agent_info(bucket: str, agent_dir: Path, zoo_dir: Path) -> AgentInfo:
             author_claimed_lb_score = float(alb)
         except (TypeError, ValueError):
             if last_error is None:
-                last_error = f"author_claimed_lb_score is not float (got {type(alb).__name__}: {alb!r})"
+                last_error = (
+                    f"author_claimed_lb_score is not float (got {type(alb).__name__}: {alb!r})"
+                )
 
     return AgentInfo(
         id=agent_id,

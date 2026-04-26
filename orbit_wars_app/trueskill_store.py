@@ -1,4 +1,5 @@
 """Persistent TrueSkill ratings per agent_id per format ('2p' / '4p')."""
+
 from __future__ import annotations
 
 import json
@@ -34,7 +35,9 @@ class TrueSkillStore:
 
     def __init__(self, path: Path):
         self.path = path
-        self._ratings: dict[str, dict[str, dict]] = {}  # agent_id → format → {mu, sigma, games_played}
+        self._ratings: dict[
+            str, dict[str, dict]
+        ] = {}  # agent_id → format → {mu, sigma, games_played}
         self._load()
 
     def _load(self):

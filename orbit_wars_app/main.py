@@ -4,6 +4,7 @@ Routes:
   GET /api/*         — API endpoints (see orbit_wars_app.api)
   /*                 — Static viewer (built by `pnpm build` in viewer/)
 """
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager

@@ -2,6 +2,7 @@
 
 Task 8 implements fast; Task 9 adds faithful.
 """
+
 from __future__ import annotations
 
 import time
@@ -13,12 +14,14 @@ from typing import Literal, Optional
 @dataclass
 class MatchOutcome:
     agent_ids: list[str]
-    winner: Optional[str]           # agent_id or None (draw / error)
-    scores: list[int]               # final ship sum per player (planets + fleets)
+    winner: Optional[str]  # agent_id or None (draw / error)
+    scores: list[int]  # final ship sum per player (planets + fleets)
     turns: int
     duration_s: float
-    seed: int = 0                   # logged for audit; engine currently ignores it
-    status: Literal["ok", "timeout", "crashed", "agent_failed_to_start", "invalid_action", "draw"] = "ok"
+    seed: int = 0  # logged for audit; engine currently ignores it
+    status: Literal[
+        "ok", "timeout", "crashed", "agent_failed_to_start", "invalid_action", "draw"
+    ] = "ok"
     # agent_failed_to_start is reserved for faithful mode (Task 9)
     replay: dict = field(default_factory=dict)
 
@@ -45,8 +48,7 @@ def run_match_fast(
     """
     if len(agent_ids) != len(agent_paths):
         raise ValueError(
-            f"agent_ids and agent_paths length mismatch: "
-            f"{len(agent_ids)} vs {len(agent_paths)}"
+            f"agent_ids and agent_paths length mismatch: {len(agent_ids)} vs {len(agent_paths)}"
         )
     from kaggle_environments import make
 
@@ -163,8 +165,7 @@ def run_match_faithful(
     """
     if len(agent_ids) != len(agent_paths):
         raise ValueError(
-            f"agent_ids and agent_paths length mismatch: "
-            f"{len(agent_ids)} vs {len(agent_paths)}"
+            f"agent_ids and agent_paths length mismatch: {len(agent_ids)} vs {len(agent_paths)}"
         )
     from kaggle_environments import make
 

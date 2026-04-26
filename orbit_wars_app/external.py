@@ -9,6 +9,7 @@ Modules:
 - read_candidates_md() / append_skipped() / append_backlog() — work with docs/external-candidates.md
 - safety_audit(source_code) — regex scan for suspicious import patterns
 """
+
 from __future__ import annotations
 
 import json
@@ -30,15 +31,15 @@ KAGGLE_CLI = os.environ.get("KAGGLE_CLI", "kaggle")
 
 
 SUSPICIOUS_PATTERNS: list[tuple[str, re.Pattern]] = [
-    ("os.system",      re.compile(r'\bos\.system\b')),
-    ("subprocess",     re.compile(r'\bsubprocess\.')),
-    ("socket",         re.compile(r'\bsocket\.')),
-    ("urllib.request", re.compile(r'\burllib\.request\b')),
-    ("requests",       re.compile(r'\brequests\.')),
-    ("pickle.load",    re.compile(r'\bpickle\.(load|loads)\b')),
-    ("eval",           re.compile(r'\beval\s*\(')),
-    ("exec",           re.compile(r'\bexec\s*\(')),
-    ("__import__",     re.compile(r'\b__import__\s*\(')),
+    ("os.system", re.compile(r"\bos\.system\b")),
+    ("subprocess", re.compile(r"\bsubprocess\.")),
+    ("socket", re.compile(r"\bsocket\.")),
+    ("urllib.request", re.compile(r"\burllib\.request\b")),
+    ("requests", re.compile(r"\brequests\.")),
+    ("pickle.load", re.compile(r"\bpickle\.(load|loads)\b")),
+    ("eval", re.compile(r"\beval\s*\(")),
+    ("exec", re.compile(r"\bexec\s*\(")),
+    ("__import__", re.compile(r"\b__import__\s*\(")),
 ]
 
 
@@ -62,6 +63,7 @@ def safety_audit(source_code: str) -> Optional[str]:
 @dataclass(frozen=True)
 class InstalledKernel:
     """Description of an installed external agent (fetched from a Kaggle notebook)."""
+
     kernel_slug: str
     kernel_version: Optional[int]
     local_name: str
@@ -104,21 +106,24 @@ def list_installed(zoo_dir: Path) -> list[InstalledKernel]:
             kv_int = int(kv) if kv is not None else None
         except (TypeError, ValueError):
             kv_int = None
-        result.append(InstalledKernel(
-            kernel_slug=str(slug),
-            kernel_version=kv_int,
-            local_name=child.name,
-            folder_path=child,
-        ))
+        result.append(
+            InstalledKernel(
+                kernel_slug=str(slug),
+                kernel_version=kv_int,
+                local_name=child.name,
+                folder_path=child,
+            )
+        )
     return result
 
 
 @dataclass
 class Candidates:
     """Snapshot of docs/external-candidates.md contents."""
-    installed: set[str]   # kernel_slugs in the Installed section
-    skipped: set[str]     # in the Skipped section
-    backlog: set[str]     # in the Backlog section
+
+    installed: set[str]  # kernel_slugs in the Installed section
+    skipped: set[str]  # in the Skipped section
+    backlog: set[str]  # in the Backlog section
 
 
 _INSTALLED_HEADER = "## Installed"
@@ -192,7 +197,7 @@ def _append_to_section(md_path: Path, section_header: str, slug: str, reason: st
         )
 
     today = date.today().isoformat()
-    new_entry = f"- `{slug}` — {today}: \"{reason}\"\n"
+    new_entry = f'- `{slug}` — {today}: "{reason}"\n'
 
     # Find section_header and insert after the first empty line following it
     lines = content.splitlines(keepends=True)
@@ -216,7 +221,7 @@ def _append_to_section(md_path: Path, section_header: str, slug: str, reason: st
             elif stripped == "" and i + 1 < len(lines):
                 # find the next non-empty line
                 next_non_empty = next(
-                    (l for l in lines[i + 1:] if l.strip()),
+                    (l for l in lines[i + 1 :] if l.strip()),
                     None,
                 )
                 if next_non_empty is None or next_non_empty.strip().startswith("## "):
@@ -250,6 +255,7 @@ class FetchResult:
         error: empty when success=True.
         safety_alert: None = clean code; string = description of matched pattern.
     """
+
     success: bool
     folder_path: Path
     error: str = ""
@@ -274,9 +280,7 @@ def _kaggle_get_notebook_info(kernel_slug: str) -> dict[str, Any]:
             text=True,
         )
     except (FileNotFoundError, PermissionError) as e:
-        raise RuntimeError(
-            f"kaggle CLI binary not available at {KAGGLE_CLI}: {e}"
-        ) from e
+        raise RuntimeError(f"kaggle CLI binary not available at {KAGGLE_CLI}: {e}") from e
     if result.returncode != 0:
         raise RuntimeError(f"kaggle kernels status failed: {result.stderr or result.stdout}")
 
@@ -443,8 +447,13 @@ def append_backlog(md_path: Path, kernel_slug: str, reason: str) -> None:
     _append_to_section(md_path, _BACKLOG_HEADER, kernel_slug, reason)
 
 
-def append_installed(md_path: Path, kernel_slug: str, local_name: str,
-                     kernel_version: int, lb_score: Optional[float] = None) -> None:
+def append_installed(
+    md_path: Path,
+    kernel_slug: str,
+    local_name: str,
+    kernel_version: int,
+    lb_score: Optional[float] = None,
+) -> None:
     """Append an entry in the Installed section. Idempotent. Format matching seed.
 
     Usage: called by fetch_notebook() on success.
@@ -484,7 +493,7 @@ def append_installed(md_path: Path, kernel_slug: str, local_name: str,
                 in_section = False
             elif stripped == "" and i + 1 < len(lines):
                 next_non_empty = next(
-                    (l for l in lines[i + 1:] if l.strip()),
+                    (l for l in lines[i + 1 :] if l.strip()),
                     None,
                 )
                 if next_non_empty is None or next_non_empty.strip().startswith("## "):
@@ -510,6 +519,7 @@ def append_installed(md_path: Path, kernel_slug: str, local_name: str,
 @dataclass
 class UpdateAvailable:
     """Notebook has a newer version on Kaggle than locally."""
+
     kernel_slug: str
     local_version: int
     remote_version: int
@@ -535,11 +545,13 @@ def check_updates(zoo_dir: Path) -> list[UpdateAvailable]:
         if not isinstance(remote_v, int):
             continue
         if remote_v > installed.kernel_version:
-            result.append(UpdateAvailable(
-                kernel_slug=installed.kernel_slug,
-                local_version=installed.kernel_version,
-                remote_version=remote_v,
-                local_name=installed.local_name,
-                folder_path=installed.folder_path,
-            ))
+            result.append(
+                UpdateAvailable(
+                    kernel_slug=installed.kernel_slug,
+                    local_version=installed.kernel_version,
+                    remote_version=remote_v,
+                    local_name=installed.local_name,
+                    folder_path=installed.folder_path,
+                )
+            )
     return result

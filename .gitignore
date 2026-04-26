@@ -25,3 +25,9 @@ viewer/replays/
 
 # Docker
 docker-compose.override.yml
+
+# .env
+.env
+
+# runs
+runs/

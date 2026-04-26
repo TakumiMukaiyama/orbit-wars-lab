@@ -18,7 +18,13 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from src.config import TrainConfig, default_train_config_path, load_train_config
-from src.features import TurnBatch, candidate_feature_dim, encode_turn, global_feature_dim, self_feature_dim
+from src.features import (
+    TurnBatch,
+    candidate_feature_dim,
+    encode_turn,
+    global_feature_dim,
+    self_feature_dim,
+)
 from src.policy import PlanetPolicy
 from src.ppo import sample_actions
 
@@ -59,6 +65,7 @@ def build_policy(cfg: TrainConfig, device: torch.device) -> PlanetPolicy:
         hidden_size=cfg.model.hidden_size,
     ).to(device)
 
+
 def register_checkpoint_module_aliases() -> None:
     sys.modules.setdefault("src", types.ModuleType("src"))
     sys.modules.setdefault("src.rl_template", types.ModuleType("src.rl_template"))
@@ -86,7 +93,10 @@ def register_checkpoint_module_aliases() -> None:
         sys.modules[f"src.rl_template.{canonical_name}"] = module
         sys.modules[f"src.{canonical_name}"] = module
 
-def load_checkpoint_if_available(policy: PlanetPolicy, checkpoint_path: str | None, device: torch.device) -> None:
+
+def load_checkpoint_if_available(
+    policy: PlanetPolicy, checkpoint_path: str | None, device: torch.device
+) -> None:
     register_checkpoint_module_aliases()
     if checkpoint_path is None:
         return
@@ -95,7 +105,9 @@ def load_checkpoint_if_available(policy: PlanetPolicy, checkpoint_path: str | No
     policy.load_state_dict(state_dict)
 
 
-def build_moves(batch: TurnBatch, policy: PlanetPolicy, device: torch.device, deterministic: bool) -> list[list[float | int]]:
+def build_moves(
+    batch: TurnBatch, policy: PlanetPolicy, device: torch.device, deterministic: bool
+) -> list[list[float | int]]:
     if batch.self_features.shape[0] == 0:
         return []
     with torch.inference_mode():
@@ -244,7 +256,9 @@ def main() -> None:
             losses += 1
         else:
             draws += 1
-        print(f"game={game_idx + 1} seed={game_seed} result={label} reward={reward:.1f} steps={steps}")
+        print(
+            f"game={game_idx + 1} seed={game_seed} result={label} reward={reward:.1f} steps={steps}"
+        )
 
     total_games = max(args.games, 1)
     win_rate = wins / total_games
