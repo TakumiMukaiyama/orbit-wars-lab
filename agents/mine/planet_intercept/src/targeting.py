@@ -18,7 +18,7 @@ from .utils import Planet, distance, fleet_speed
 
 NEUTRAL_OWNER = -1
 
-HOLD_HORIZON = 20.0
+HOLD_HORIZON = 10.0
 THREAT_MARGIN = 0.0
 TRAVEL_PENALTY = 0.0
 

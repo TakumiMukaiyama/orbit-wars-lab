@@ -260,15 +260,21 @@ class Tournament:
 
     def _generate_pairs(self, agents: list[dict]) -> list[tuple[dict, ...]]:
         """round-robin: C(n,2) pairs (2p) or C(n,4) 4-tuples (4p).
-        gauntlet: challenger × each opponent (2p), or challenger + C(n-1,3) (4p)."""
+        gauntlet: challenger × each opponent (2p), or challenger + C(n-1,3) (4p).
+        focus_id: filter to only tuples that include the focused agent."""
         if self.config.shape == "gauntlet":
             return self._generate_gauntlet_pairs(agents)
         if self.config.format == "2p":
-            return list(itertools.combinations(agents, 2))
-        # 4p round-robin
-        if len(agents) < 4:
-            raise ValueError(f"4p format needs ≥4 agents, got {len(agents)}")
-        return list(itertools.combinations(agents, 4))
+            pairs = list(itertools.combinations(agents, 2))
+        else:
+            # 4p round-robin
+            if len(agents) < 4:
+                raise ValueError(f"4p format needs ≥4 agents, got {len(agents)}")
+            pairs = list(itertools.combinations(agents, 4))
+        if self.config.focus_id:
+            fid = self.config.focus_id
+            pairs = [p for p in pairs if any(a["id"] == fid for a in p)]
+        return pairs
 
     def _generate_gauntlet_pairs(self, agents: list[dict]) -> list[tuple[dict, ...]]:
         cid = self.config.challenger_id
@@ -413,6 +419,11 @@ def _cmd_run(args):
         )
         args.parallel = 1
 
+    focus_id = getattr(args, "focus", None)
+    if focus_id and focus_id not in agents:
+        print(f"--focus {focus_id!r} is not in the selected agent list", file=sys.stderr)
+        sys.exit(1)
+
     args.runs.mkdir(parents=True, exist_ok=True)
     cfg = TournamentConfig(
         agents=agents,
@@ -421,6 +432,7 @@ def _cmd_run(args):
         format=args.format,
         parallel=args.parallel,
         seed_base=args.seed,
+        focus_id=focus_id,
     )
     t = Tournament(config=cfg, runs_root=args.runs, zoo_root=args.zoo)
     run_id = t.run()
@@ -539,6 +551,12 @@ def main():
     )
     p_run.add_argument("--parallel", type=int, default=1, help="Parallel matches (fast mode only)")
     p_run.add_argument("--seed", type=int, default=42, help="Base seed for match randomness")
+    p_run.add_argument(
+        "--focus",
+        default=None,
+        metavar="AGENT_ID",
+        help="Only run matches that include this agent (skips pairs/tuples without it)",
+    )
     p_run.set_defaults(func=_cmd_run)
 
     p_g = sub.add_parser("gauntlet", help="One challenger vs every other agent (× K games)")

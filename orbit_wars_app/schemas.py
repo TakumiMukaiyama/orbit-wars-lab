@@ -101,3 +101,6 @@ class TournamentConfig(BaseModel):
     # Required when shape="gauntlet". Must be present in agents. The runner
     # pairs the challenger against each remaining agent × games_per_pair.
     challenger_id: Optional[str] = None
+    # Optional: only generate pairs/tuples that include this agent ID.
+    # Useful for round-robin runs where you only care about one agent's matches.
+    focus_id: Optional[str] = None
