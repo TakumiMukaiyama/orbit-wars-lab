@@ -3,13 +3,16 @@ import math
 import pytest
 
 from src.targeting import (
+    AHEAD_THRESHOLD,
+    BEHIND_THRESHOLD,
     HOLD_HORIZON,
     NEUTRAL_OWNER,
+    classify_defense,
+    compute_domination,
     compute_rival_eta,
     compute_rival_eta_per_player,
     enumerate_candidates,
     enumerate_intercept_candidates,
-    estimate_reserve,
     fleet_heading_to,
     select_move,
     ships_budget,
@@ -38,6 +41,25 @@ class TestShipsBudget:
     def test_large_ships(self):
         t = P(0, 1, 0, 0, ships=100)
         assert ships_budget(t) == 101
+
+    def test_eta_production_included(self):
+        t = P(0, 1, 0, 0, ships=10, prod=2)
+        # my_eta=5 -> garrison_at_arrival = 10 + 2*5 = 20 -> budget = 21
+        assert ships_budget(t, my_eta=5.0) == 21
+
+    def test_already_sent_subtracted(self):
+        t = P(0, 1, 0, 0, ships=10, prod=2)
+        # garrison=20, already_sent=8 -> 20 - 8 + 1 = 13
+        assert ships_budget(t, my_eta=5.0, already_sent=8) == 13
+
+    def test_already_sent_covers_all_returns_one(self):
+        t = P(0, 1, 0, 0, ships=10, prod=0)
+        # garrison=10, already_sent=15 -> max(1, 10 - 15 + 1) = 1
+        assert ships_budget(t, my_eta=0.0, already_sent=15) == 1
+
+    def test_backward_compat_no_args(self):
+        t = P(0, 1, 0, 0, ships=10)
+        assert ships_budget(t) == 11
 
 
 class TestTargetValue:
@@ -191,6 +213,27 @@ class TestEnumerateCandidates:
         cands = enumerate_candidates(mine, planets, fleets=[], player=0)
         assert all(c[0].owner != 0 for c in cands)
 
+    def test_planned_reduces_ships_needed(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        target = P(1, 1, 10, 0, ships=10, prod=0)
+        planets = [mine, target]
+        # planned なし: garrison=10+0=10 -> ships_needed=11
+        cands_no_plan = enumerate_candidates(mine, planets, fleets=[], player=0, planned={})
+        # planned あり: already_sent=8 -> max(1, 10-8+1)=3
+        cands_planned = enumerate_candidates(mine, planets, fleets=[], player=0, planned={1: 8})
+        ships_no = next(c[1] for c in cands_no_plan if c[0].id == 1)
+        ships_pl = next(c[1] for c in cands_planned if c[0].id == 1)
+        assert ships_pl < ships_no
+
+    def test_planned_fully_covered_returns_one(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        target = P(1, 1, 10, 0, ships=5, prod=0)
+        planets = [mine, target]
+        # already_sent=100 -> max(1, 5-100+1) = 1
+        cands = enumerate_candidates(mine, planets, fleets=[], player=0, planned={1: 100})
+        ships_needed = next(c[1] for c in cands if c[0].id == 1)
+        assert ships_needed == 1
+
 
 class TestSelectMove:
     def test_reserve_blocks_small_stockpile(self):
@@ -207,7 +250,8 @@ class TestSelectMove:
         ]
         picked = select_move(mine, cands, reserve=5)
         assert picked is not None
-        angle, ships = picked
+        target_id, angle, ships = picked
+        assert target_id == 2  # P(2) が value 最大
         assert angle == pytest.approx(1.0)
         assert ships == 2
 
@@ -216,6 +260,8 @@ class TestSelectMove:
         cands = [(P(1, 1, 10, 0, ships=1), 2, 0.0, -5.0)]
         result = select_move(mine, cands)
         assert result is not None
+        target_id, angle, ships = result
+        assert target_id == 1
 
 
 class TestComputeRivalETAPerPlayer:
@@ -281,32 +327,6 @@ class TestFleetHeadingTo:
         assert fleet_heading_to(f, planet) is False
 
 
-class TestEstimateReserve:
-    def test_single_planet_returns_zero(self):
-        mine = P(0, 0, 50, 50, ships=50)
-        enemy_fleet = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=30)
-        r = estimate_reserve(mine, [enemy_fleet], my_player=0, my_planet_count=1)
-        assert r == 0
-
-    def test_incoming_enemy_fleet_raises_reserve(self):
-        mine = P(0, 0, 50, 50, ships=100)
-        enemy_fleet = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=30)
-        r = estimate_reserve(mine, [enemy_fleet], my_player=0, my_planet_count=3)
-        assert r >= 30
-
-    def test_sideways_fleet_ignored(self):
-        mine = P(0, 0, 50, 50, ships=100)
-        sideways = F(1, 1, 20, 20, angle=0.0, from_id=99, ships=30)
-        r = estimate_reserve(mine, [sideways], my_player=0, my_planet_count=3)
-        assert r == 0
-
-    def test_own_fleet_not_counted(self):
-        mine = P(0, 0, 50, 50, ships=100)
-        own_fleet = F(1, 0, 30, 50, angle=0.0, from_id=99, ships=30)
-        r = estimate_reserve(mine, [own_fleet], my_player=0, my_planet_count=3)
-        assert r == 0
-
-
 class TestEnumerateInterceptCandidates:
     def test_no_threat_returns_empty(self):
         mine = P(0, 0, 10, 10, ships=100)
@@ -362,3 +382,162 @@ class TestEnumerateInterceptCandidates:
         hi_values = [c[3] for c in cands if c[0].id == defended_hi.id]
         if lo_values and hi_values:
             assert max(hi_values) > max(lo_values)
+
+
+class TestClassifyDefense:
+    def test_no_incoming_is_safe(self):
+        mine = P(0, 0, 50, 50, ships=50)
+        status, reserve = classify_defense(mine, fleets=[], player=0)
+        assert status == "safe"
+        assert reserve == 0
+
+    def test_threatened_when_ships_cover_incoming(self):
+        mine = P(0, 0, 50, 50, ships=50)
+        enemy = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=30)
+        status, reserve = classify_defense(mine, [enemy], player=0)
+        # mine.ships=50 >= incoming=30 -> threatened
+        assert status == "threatened"
+        assert reserve == 30
+
+    def test_doomed_when_ships_insufficient(self):
+        mine = P(0, 0, 50, 50, ships=10)
+        enemy = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=30)
+        status, reserve = classify_defense(mine, [enemy], player=0)
+        # mine.ships=10 < incoming=30 -> doomed
+        assert status == "doomed"
+        assert reserve == 30
+
+    def test_own_fleet_not_counted(self):
+        mine = P(0, 0, 50, 50, ships=10)
+        own = F(1, 0, 30, 50, angle=0.0, from_id=99, ships=30)
+        status, reserve = classify_defense(mine, [own], player=0)
+        assert status == "safe"
+
+    def test_sideways_fleet_ignored(self):
+        mine = P(0, 0, 50, 50, ships=10)
+        sideways = F(1, 1, 20, 20, angle=0.0, from_id=99, ships=30)
+        status, reserve = classify_defense(mine, [sideways], player=0)
+        assert status == "safe"
+
+    def test_multiple_fleets_summed(self):
+        mine = P(0, 0, 50, 50, ships=40)
+        e1 = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=20)
+        e2 = F(2, 2, 30, 50, angle=0.0, from_id=99, ships=25)
+        status, reserve = classify_defense(mine, [e1, e2], player=0)
+        # incoming=45, mine.ships=40 < 45 -> doomed
+        assert status == "doomed"
+        assert reserve == 45
+
+
+class TestComputeRivalEtaOrbital:
+    def test_angular_velocity_signature_accepted(self):
+        """angular_velocity 引数が受け付けられること。"""
+        target = P(1, -1, 30, 50, ships=5)
+        rival_planet = P(2, 1, 70, 50, ships=15)
+        planets = [P(0, 0, 10, 50, ships=10), rival_planet, target]
+        # 引数が存在することだけ確認 (TypeError が出ないこと)
+        eta = compute_rival_eta(target, my_player=0, fleets=[], planets=planets,
+                                angular_velocity=0.03)
+        assert math.isfinite(eta)
+
+    def test_orbital_and_static_give_different_eta(self):
+        """angular_velocity があるとき orbital ターゲットの rival ETA が静止計算と異なること。"""
+        # 軌道惑星: 中心(50,50) から距離 r=20 < 50 の惑星
+        target = P(1, -1, 70, 50, ships=5)  # (70,50) -> r=20 < 50 -> orbital
+        rival_planet = P(2, 1, 10, 50, ships=15)  # 反対側
+        planets = [P(0, 0, 90, 50, ships=10), rival_planet, target]
+        eta_static = compute_rival_eta(target, my_player=0, fleets=[], planets=planets,
+                                        angular_velocity=0.0)
+        eta_orbital = compute_rival_eta(target, my_player=0, fleets=[], planets=planets,
+                                         angular_velocity=0.03)
+        # 軌道惑星なので両者は異なるはず
+        assert eta_static != pytest.approx(eta_orbital, rel=0.01)
+
+
+class TestComputeDomination:
+    def test_equal_returns_zero(self):
+        dom = compute_domination(my_total=100, enemy_total=100)
+        assert dom == pytest.approx(0.0)
+
+    def test_all_mine_returns_one(self):
+        dom = compute_domination(my_total=100, enemy_total=0)
+        assert dom == pytest.approx(1.0)
+
+    def test_all_enemy_returns_minus_one(self):
+        dom = compute_domination(my_total=0, enemy_total=100)
+        assert dom == pytest.approx(-1.0)
+
+    def test_both_zero_returns_zero(self):
+        dom = compute_domination(my_total=0, enemy_total=0)
+        assert dom == pytest.approx(0.0)
+
+    def test_thresholds_exist_and_sign(self):
+        assert BEHIND_THRESHOLD < 0
+        assert AHEAD_THRESHOLD > 0
+
+
+class TestEnumerateCandidatesEndgame:
+    def test_unreachable_target_excluded(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        # (60,0) までの距離=60、1 ship -> speed=1.0 -> eta=60 turns
+        far_target = P(1, 1, 60, 0, ships=1, prod=1)
+        planets = [mine, far_target]
+        # remaining_turns=10 なら eta=60 > 10 で除外される
+        cands = enumerate_candidates(mine, planets, fleets=[], player=0, remaining_turns=10)
+        assert all(c[0].id != far_target.id for c in cands)
+
+    def test_reachable_target_included(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        near_target = P(1, 1, 5, 0, ships=1, prod=1)
+        planets = [mine, near_target]
+        # remaining_turns=100 なら eta < 100 で含まれる
+        cands = enumerate_candidates(mine, planets, fleets=[], player=0, remaining_turns=100)
+        assert any(c[0].id == near_target.id for c in cands)
+
+    def test_no_remaining_turns_no_filter(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        far_target = P(1, 1, 60, 0, ships=1, prod=1)
+        planets = [mine, far_target]
+        # remaining_turns=None -> フィルターなし
+        cands = enumerate_candidates(mine, planets, fleets=[], player=0, remaining_turns=None)
+        assert any(c[0].id == far_target.id for c in cands)
+
+
+class TestTargetValueWithMode:
+    def test_behind_mode_reduces_neutral_value(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        v_neutral = target_value(
+            mine, 20.0, 0.0, 3, math.inf, ships_to_send=7, my_eta=5.0,
+            target_owner=NEUTRAL_OWNER, mode="neutral",
+        )
+        v_behind = target_value(
+            mine, 20.0, 0.0, 3, math.inf, ships_to_send=7, my_eta=5.0,
+            target_owner=NEUTRAL_OWNER, mode="behind",
+        )
+        assert v_behind < v_neutral
+
+    def test_ahead_mode_same_as_neutral_for_neutral_planet(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        v_neutral = target_value(
+            mine, 20.0, 0.0, 3, math.inf, ships_to_send=7, my_eta=5.0,
+            target_owner=NEUTRAL_OWNER, mode="neutral",
+        )
+        v_ahead = target_value(
+            mine, 20.0, 0.0, 3, math.inf, ships_to_send=7, my_eta=5.0,
+            target_owner=NEUTRAL_OWNER, mode="ahead",
+        )
+        # ahead モードでは中立惑星の HOLD_HORIZON は変えない (敵惑星への積極性は別途)
+        assert v_ahead == pytest.approx(v_neutral)
+
+    def test_mode_does_not_affect_enemy_planet(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        v_behind = target_value(
+            mine, 20.0, 0.0, 3, rival_eta=100.0, ships_to_send=10, my_eta=5.0,
+            target_owner=1, mode="behind",
+        )
+        v_neutral = target_value(
+            mine, 20.0, 0.0, 3, rival_eta=100.0, ships_to_send=10, my_eta=5.0,
+            target_owner=1, mode="neutral",
+        )
+        # 敵惑星の価値式は mode によらない
+        assert v_behind == pytest.approx(v_neutral)
