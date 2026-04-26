@@ -210,6 +210,27 @@ class TestEnumerateCandidates:
         cands = enumerate_candidates(mine, planets, fleets=[], player=0)
         assert all(c[0].owner != 0 for c in cands)
 
+    def test_planned_reduces_ships_needed(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        target = P(1, 1, 10, 0, ships=10, prod=0)
+        planets = [mine, target]
+        # planned なし: garrison=10+0=10 -> ships_needed=11
+        cands_no_plan = enumerate_candidates(mine, planets, fleets=[], player=0, planned={})
+        # planned あり: already_sent=8 -> max(1, 10-8+1)=3
+        cands_planned = enumerate_candidates(mine, planets, fleets=[], player=0, planned={1: 8})
+        ships_no = next(c[1] for c in cands_no_plan if c[0].id == 1)
+        ships_pl = next(c[1] for c in cands_planned if c[0].id == 1)
+        assert ships_pl < ships_no
+
+    def test_planned_fully_covered_returns_one(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        target = P(1, 1, 10, 0, ships=5, prod=0)
+        planets = [mine, target]
+        # already_sent=100 -> max(1, 5-100+1) = 1
+        cands = enumerate_candidates(mine, planets, fleets=[], player=0, planned={1: 100})
+        ships_needed = next(c[1] for c in cands if c[0].id == 1)
+        assert ships_needed == 1
+
 
 class TestSelectMove:
     def test_reserve_blocks_small_stockpile(self):

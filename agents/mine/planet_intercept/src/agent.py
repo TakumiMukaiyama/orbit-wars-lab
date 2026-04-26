@@ -1,12 +1,11 @@
-"""Phase 1b エージェント: 中立 value 修正 + 母星 reserve + 迎撃 + 4P 基盤。
+"""Phase 1c エージェント: In-flight tracking + Doomed evacuation + State machine."""
 
-nearest-sniper (baselines/v0_nearest.py) を置き換える新ベースライン。
-"""
+import math
 
 from .targeting import (
+    classify_defense,
     enumerate_candidates,
     enumerate_intercept_candidates,
-    estimate_reserve,
     select_move,
 )
 from .utils import parse_obs
@@ -20,15 +19,35 @@ def agent(obs):
         return []
 
     n = len(my_planets)
+
+    # planned[planet_id] = このターンに既に送った ships 合計
+    planned: dict[int, int] = {}
+
     moves = []
     for mine in my_planets:
-        reserve = estimate_reserve(mine, fleets, player, my_planet_count=n)
+        status, reserve = classify_defense(mine, fleets, player)
+
+        if status == "doomed" and n > 1:
+            # 最も近い自惑星に全艦退避
+            allies = [p for p in planets if p.owner == player and p.id != mine.id]
+            if allies:
+                nearest_ally = min(
+                    allies,
+                    key=lambda p: (p.x - mine.x) ** 2 + (p.y - mine.y) ** 2,
+                )
+                evac_angle = math.atan2(nearest_ally.y - mine.y, nearest_ally.x - mine.x)
+                evac_ships = mine.ships
+                if evac_ships > 0:
+                    moves.append([mine.id, evac_angle, evac_ships])
+            continue
+
         attack_cands = enumerate_candidates(
             mine,
             planets,
             fleets,
             player,
             angular_velocity=angular_velocity,
+            planned=planned,
         )
         intercept_cands = enumerate_intercept_candidates(
             mine,
@@ -42,6 +61,11 @@ def agent(obs):
         if picked is None:
             continue
         angle, ships = picked
+        # 送出した ships を planned に記録
+        for target, ships_needed, cand_angle, _ in all_cands:
+            if abs(cand_angle - angle) < 1e-9 and ships_needed == ships:
+                planned[target.id] = planned.get(target.id, 0) + ships
+                break
         moves.append([mine.id, angle, ships])
 
     return moves

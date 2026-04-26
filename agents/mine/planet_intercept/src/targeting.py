@@ -95,6 +95,7 @@ def enumerate_candidates(
     player: int,
     top_n: int = 16,
     angular_velocity: float = 0.0,
+    planned: dict | None = None,
 ):
     """自分以外が所有する惑星をインターセプト位置で距離昇順ソートし上位 top_n 件を返す。
 
@@ -132,7 +133,8 @@ def enumerate_candidates(
             continue
         angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
         # my_eta が確定してから正確な ships_needed を計算
-        ships_needed = ships_budget(t, my_eta=my_eta)
+        already_sent = planned.get(t.id, 0) if planned else 0
+        ships_needed = ships_budget(t, my_eta=my_eta, already_sent=already_sent)
         rival_eta = compute_rival_eta(t, player, fleets, all_planets)
         value = target_value(
             my_planet, ix, iy, t.production, rival_eta, ships_needed, my_eta, target_owner=t.owner
@@ -173,6 +175,19 @@ def estimate_reserve(
         if fleet_heading_to(f, mine):
             incoming += f.ships
     return int(incoming * incoming_coef)
+
+
+def classify_defense(mine: Planet, fleets, player: int) -> tuple[str, int]:
+    """スタブ: Task 3 で本実装。"""
+    incoming = sum(
+        f.ships for f in fleets
+        if f.owner != player and fleet_heading_to(f, mine)
+    )
+    if incoming == 0:
+        return "safe", 0
+    if mine.ships >= incoming:
+        return "threatened", incoming
+    return "doomed", incoming
 
 
 def enumerate_intercept_candidates(
