@@ -5,6 +5,7 @@ import math
 from .targeting import (
     AHEAD_THRESHOLD,
     BEHIND_THRESHOLD,
+    build_planned_commitments,
     classify_defense,
     compute_domination,
     enumerate_candidates,
@@ -45,8 +46,8 @@ def agent(obs):
         p.id: classify_defense(p, fleets, player) for p in my_planets
     }
 
-    # planned[planet_id] = このターンに既に送った ships 合計
-    planned: dict[int, int] = {}
+    # planned[planet_id] = 既存自フリート + このターンに既に送った ships 合計
+    planned = build_planned_commitments(planets, fleets, player)
 
     moves = []
     for mine in my_planets:

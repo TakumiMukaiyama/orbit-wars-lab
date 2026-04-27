@@ -7,6 +7,7 @@ from src.targeting import (
     BEHIND_THRESHOLD,
     HOLD_HORIZON,
     NEUTRAL_OWNER,
+    build_planned_commitments,
     classify_defense,
     compute_domination,
     compute_rival_eta,
@@ -237,6 +238,51 @@ class TestEnumerateCandidates:
         # already_sent=100 -> max(0, 5-100+1) = 0 なので候補から除外
         cands = enumerate_candidates(mine, planets, fleets=[], player=0, planned={1: 100})
         assert all(c[0].id != 1 for c in cands)
+
+
+class TestBuildPlannedCommitments:
+    def test_existing_own_fleet_reduces_target_budget(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        target = P(1, 1, 20, 0, ships=10, prod=0)
+        fleet = F(10, 0, 5, 0, angle=0.0, from_id=0, ships=8)
+        planets = [mine, target]
+
+        planned = build_planned_commitments(planets, [fleet], player=0)
+        assert planned == {1: 8}
+
+        cands_no_plan = enumerate_candidates(mine, planets, fleets=[], player=0, planned={})
+        cands_planned = enumerate_candidates(mine, planets, fleets=[], player=0, planned=planned)
+        ships_no = next(c[1] for c in cands_no_plan if c[0].id == 1)
+        ships_pl = next(c[1] for c in cands_planned if c[0].id == 1)
+        assert ships_pl == ships_no - 8
+
+    def test_existing_own_fleet_covered_target_is_excluded(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        target = P(1, 1, 20, 0, ships=5, prod=0)
+        fleet = F(10, 0, 5, 0, angle=0.0, from_id=0, ships=10)
+        planets = [mine, target]
+
+        planned = build_planned_commitments(planets, [fleet], player=0)
+        cands = enumerate_candidates(mine, planets, fleets=[], player=0, planned=planned)
+        assert all(c[0].id != 1 for c in cands)
+
+    def test_existing_own_fleet_counts_nearest_target_on_line(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        near = P(1, 1, 20, 0, ships=5, prod=0)
+        far = P(2, 1, 40, 0, ships=5, prod=0)
+        fleet = F(10, 0, 5, 0, angle=0.0, from_id=0, ships=10)
+
+        planned = build_planned_commitments([mine, far, near], [fleet], player=0)
+        assert planned == {1: 10}
+
+    def test_enemy_and_miss_fleets_ignored(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        target = P(1, 1, 20, 0, ships=5, prod=0)
+        enemy = F(10, 1, 5, 0, angle=0.0, from_id=99, ships=10)
+        miss = F(11, 0, 5, 10, angle=0.0, from_id=0, ships=10)
+
+        planned = build_planned_commitments([mine, target], [enemy, miss], player=0)
+        assert planned == {}
 
 
 class TestSelectMove:

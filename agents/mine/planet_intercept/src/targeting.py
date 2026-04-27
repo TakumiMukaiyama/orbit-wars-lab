@@ -27,6 +27,34 @@ BEHIND_THRESHOLD = -0.3
 AHEAD_THRESHOLD = 0.3
 
 
+def _fleet_forward_distance(fleet, planet) -> float:
+    dx = planet.x - fleet.x
+    dy = planet.y - fleet.y
+    return math.cos(fleet.angle) * dx + math.sin(fleet.angle) * dy
+
+
+def build_planned_commitments(planets, fleets, player: int) -> dict[int, int]:
+    """既に飛んでいる自フリートが到達しそうな非自惑星ごとの ships 合計。
+
+    フリートは直線上で最初に衝突した惑星で消えるため、進行方向上で最も近い
+    非自惑星だけをコミット済みとして扱う。
+    """
+    targets = [p for p in planets if p.owner != player]
+    planned: dict[int, int] = {}
+    for f in fleets:
+        if f.owner != player:
+            continue
+        candidates = [
+            t for t in targets
+            if fleet_heading_to(f, t, tolerance_turns=500.0)
+        ]
+        if not candidates:
+            continue
+        target = min(candidates, key=lambda t: _fleet_forward_distance(f, t))
+        planned[target.id] = planned.get(target.id, 0) + f.ships
+    return planned
+
+
 def ships_budget(target: Planet, my_eta: float = 0.0, already_sent: int = 0) -> int:
     """占領に必要な最小艦船量。
 
