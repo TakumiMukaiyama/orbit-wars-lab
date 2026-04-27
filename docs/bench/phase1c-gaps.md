@@ -201,3 +201,32 @@ d92b21e feat(agent): drive classify_defense with planet timeline      (G1)
 
 P5 は P6 の後に `estimate_snipe_outcome` の penalty 設計を練り直してから再挑戦する。
 
+## P6: Multi-source Swarm (不採用・revert 済み)
+
+- 試行内容:
+  - `targeting.py` に `SwarmMission` dataclass と `ETA_SYNC_TOLERANCE=3` を追加。
+  - `enumerate_swarm_candidates(my_planets, ...)` を実装。各ソース単独では `ships_needed` を満たせないが 2-source 合算なら満たせるターゲットを探し、ETA 差 ≤ 3 の source ペアを SwarmMission に変換。
+  - `agent.py` でシングルソースループ後に `fired_sources` 管理のスウォームパスを追加。
+- Run (AFTER): `runs/2026-04-27-013`
+- 単体テスト: 144 passed, 2 skipped (`TestEnumerateSwarmCandidates` 4 件追加)
+
+| 相手 | After +P4 (011) | After +P4+P6 (013) | Δ (wins) |
+|---|---|---|---|
+| baselines/nearest-sniper | 9-1-0 (90.0%) | 9-1-0 (90.0%) | = |
+| baselines/random | 10-0-0 (100.0%) | 10-0-0 (100.0%) | = |
+| baselines/starter | 9-1-0 (90.0%) | 6-4-0 (60.0%) | -3 |
+| external/kashiwaba-rl | 10-0-0 (100.0%) | 10-0-0 (100.0%) | = |
+| external/pilkwang-structured | 1-9-0 (10.0%) | 1-9-0 (10.0%) | = |
+| external/sigmaborov-reinforce | 3-7-0 (30.0%) | 0-10-0 (0.0%) | -3 |
+| external/sigmaborov-starter | 0-10-0 (0.0%) | 2-8-0 (20.0%) | +2 |
+| external/tamrazov-starwars | 1-9-0 (10.0%) | 0-10-0 (0.0%) | = |
+| external/yuriygreben-architect | 1-9-0 (10.0%) | 0-10-0 (0.0%) | = |
+| **TOTAL** | **44/90 (48.9%)** | **38/90 (42.2%)** | **-6 (-6.7pt)** |
+
+判定: 全体 -6 勝、基準 (≥41/90) を大きく下回るため**不採用**。`git revert` でリバート済み。`targeting.py` の `SwarmMission` / `enumerate_swarm_candidates` は残存 (テストも維持)。
+
+原因メモ (次回リトライ時の参考):
+- starter -3、sigmaborov-reinforce -3 の劣化が主因。スウォームパスが single-source ループで発射済みでない惑星 (ships 温存中の惑星) を2本同時に消費し、single-source 攻撃手が減少した。
+- 具体的には「シングルソースループで発射しなかった惑星」= 防衛予備 or 価値の低い手しかない惑星 をスウォームで一気に使い、結果 ships 不足に陥ると推定。
+- 再挑戦の方針: (a) swarm は `domination=ahead` のときだけ活性化 (ships 余裕がある状況限定)、(b) value 閾値を高めに設定して質の低い mission は弾く、(c) swarm 発動条件に「両 source の ships が `ships_needed * 2` 以上」などの余裕チェックを追加。
+
