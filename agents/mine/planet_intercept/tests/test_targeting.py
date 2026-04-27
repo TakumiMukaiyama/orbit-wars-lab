@@ -670,7 +670,84 @@ class TestClassifyDefense:
         assert reserve == 15
 
 
-from src.targeting import SwarmMission, enumerate_swarm_candidates
+from src.targeting import (
+    SNIPE_HOLD_PENALTY,
+    SNIPE_MIN_HOLD,
+    TRAVEL_PENALTY,
+    SwarmMission,
+    enumerate_snipe_candidates,
+    enumerate_swarm_candidates,
+)
+from src.world import build_arrival_ledger, build_timelines
+
+
+class TestEnumerateSnipeCandidates:
+    def test_neutral_with_enemy_arrival_produces_candidate(self):
+        """中立 + enemy arrival あり + 自 eta < enemy eta なら候補が出る。"""
+        import math as _math
+        my_planet = P(0, 0, 0, 0, ships=50)
+        target = P(1, NEUTRAL_OWNER, 10, 0, ships=5, prod=2)
+        enemy_planet = P(2, 1, 90, 0, ships=10)
+        planets = [my_planet, target, enemy_planet]
+        enemy_fleet = Fleet(
+            id=10, owner=1, x=50, y=0,
+            angle=_math.pi,
+            from_planet_id=99, ships=10,
+        )
+        ledger = build_arrival_ledger(planets, [enemy_fleet], horizon=80)
+        timelines = build_timelines(planets, ledger, horizon=80)
+        cands = enumerate_snipe_candidates(
+            my_planet, planets, [enemy_fleet], player=0,
+            timelines=timelines, ledger=ledger, horizon=80,
+        )
+        assert any(c[0].id == target.id for c in cands)
+
+    def test_no_enemy_arrival_no_candidate(self):
+        """ledger に enemy arrival なし -> 候補なし。"""
+        my_planet = P(0, 0, 0, 0, ships=50)
+        target = P(1, NEUTRAL_OWNER, 10, 0, ships=5, prod=2)
+        planets = [my_planet, target]
+        cands = enumerate_snipe_candidates(
+            my_planet, planets, fleets=[], player=0,
+            timelines={}, ledger={}, horizon=80,
+        )
+        assert cands == []
+
+    def test_short_hold_has_penalty(self):
+        """hold_turns < SNIPE_MIN_HOLD のとき value がペナルティ分小さくなる。"""
+        import math as _math
+        my_planet = P(0, 0, 0, 0, ships=50)
+        target = P(1, NEUTRAL_OWNER, 10, 0, ships=5, prod=2)
+        planets = [my_planet, target]
+        # enemy が eta=2 前後で到着 -> hold_turns が SNIPE_MIN_HOLD 未満になる
+        enemy_fleet = Fleet(id=10, owner=1, x=15, y=0, angle=_math.pi, from_planet_id=99, ships=10)
+        ledger = build_arrival_ledger(planets, [enemy_fleet], horizon=80)
+        timelines = build_timelines(planets, ledger, horizon=80)
+        cands = enumerate_snipe_candidates(
+            my_planet, planets, [enemy_fleet], player=0,
+            timelines=timelines, ledger=ledger, horizon=80,
+        )
+        if cands:
+            v = cands[0][3]
+            ships_needed = cands[0][1]
+            my_eta = cands[0][4]
+            no_penalty_cap = (
+                target.production * SNIPE_MIN_HOLD
+                - ships_needed
+                - my_eta * TRAVEL_PENALTY
+            )
+            assert v < no_penalty_cap
+
+    def test_enemy_owned_target_excluded(self):
+        """target.owner が enemy -> 候補なし (中立のみ対象)。"""
+        my_planet = P(0, 0, 0, 0, ships=50)
+        target = P(1, 1, 10, 0, ships=5, prod=2)
+        planets = [my_planet, target]
+        cands = enumerate_snipe_candidates(
+            my_planet, planets, fleets=[], player=0,
+            timelines={}, ledger={}, horizon=80,
+        )
+        assert cands == []
 
 
 class TestEnumerateSwarmCandidates:

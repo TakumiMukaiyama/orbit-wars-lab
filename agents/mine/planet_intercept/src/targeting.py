@@ -16,7 +16,13 @@ from .geometry import (
     segment_hits_sun,
 )
 from .utils import Planet, distance, fleet_speed
-from .world import PlanetState, first_turn_lost, ships_needed_to_capture_at, state_at
+from .world import (
+    PlanetState,
+    estimate_snipe_outcome,
+    first_turn_lost,
+    ships_needed_to_capture_at,
+    state_at,
+)
 
 NEUTRAL_OWNER = -1
 
@@ -32,6 +38,9 @@ STATIC_HIGH_PROD_BONUS = 30.0
 
 BEHIND_THRESHOLD = -0.3
 AHEAD_THRESHOLD = 0.3
+
+SNIPE_MIN_HOLD = 5        # hold_turns がこれ未満のとき SNIPE_HOLD_PENALTY を加算
+SNIPE_HOLD_PENALTY = 30.0  # 短命 snipe に対するペナルティ
 
 ETA_SYNC_TOLERANCE = 3  # max ETA difference (turns) between swarm sources
 
@@ -382,6 +391,99 @@ def enumerate_intercept_candidates(
             save_value = defended.production * HOLD_HORIZON
             value = save_value - ships_needed - my_eta * TRAVEL_PENALTY
             out.append((defended, ships_needed, angle, value, float(my_eta)))
+    return out
+
+
+def enumerate_snipe_candidates(
+    my_planet: Planet,
+    all_planets,
+    fleets,
+    player: int,
+    angular_velocity: float = 0.0,
+    planned: dict | None = None,
+    remaining_turns: int | None = None,
+    timelines: dict | None = None,
+    ledger: dict | None = None,
+    horizon: int = 80,
+) -> list:
+    """中立惑星への snipe 候補を列挙する。
+
+    条件: 中立 + ledger に enemy arrival あり + 自 eta < 最速 enemy eta
+    value = production * hold_turns - ships_needed - my_eta * TRAVEL_PENALTY
+            - (SNIPE_HOLD_PENALTY if hold_turns < SNIPE_MIN_HOLD else 0)
+    """
+    from .utils import CENTER
+
+    if planned is None:
+        planned = {}
+    if ledger is None:
+        ledger = {}
+
+    out = []
+    for target in all_planets:
+        if target.owner != NEUTRAL_OWNER:
+            continue
+        if target.id == my_planet.id:
+            continue
+        enemy_arrivals = [a for a in ledger.get(target.id, []) if a.owner != player]
+        if not enemy_arrivals:
+            continue
+        enemy_min_eta = min(a.eta for a in enemy_arrivals)
+
+        r = math.hypot(target.x - CENTER, target.y - CENTER)
+        is_orbital = angular_velocity != 0.0 and (r + target.radius < 50)
+        if is_orbital:
+            ships_approx = max(1, my_planet.ships // 2)
+            ix, iy, my_eta = intercept_pos(my_planet.x, my_planet.y, ships_approx, target, angular_velocity)
+        else:
+            ix, iy = target.x, target.y
+            ships_approx = max(1, my_planet.ships // 2)
+            my_eta = route_eta(my_planet.x, my_planet.y, ix, iy, ships_approx)
+
+        if my_eta >= enemy_min_eta:
+            continue
+        if segment_hits_sun(my_planet.x, my_planet.y, ix, iy):
+            continue
+        if remaining_turns is not None and my_eta > remaining_turns:
+            continue
+
+        angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
+        already_sent = planned.get(target.id, 0)
+        if timelines and target.id in timelines:
+            needed = ships_needed_to_capture_at(
+                target, timelines[target.id], player, int(math.ceil(my_eta))
+            )
+        else:
+            needed = ships_budget(target, my_eta=my_eta)
+        needed = max(0, needed - already_sent)
+        if needed <= 0:
+            continue
+
+        timeline = timelines.get(target.id) if timelines else None
+        if timeline is not None:
+            hold_turns, _ = estimate_snipe_outcome(
+                target, timeline, player,
+                my_eta=int(math.ceil(my_eta)),
+                ships_after_capture=needed,
+                horizon=horizon,
+            )
+        else:
+            hold_turns = max(0, horizon - int(my_eta))
+
+        if hold_turns == 0:
+            continue
+
+        penalty = SNIPE_HOLD_PENALTY if hold_turns < SNIPE_MIN_HOLD else 0.0
+        value = (
+            target.production * hold_turns
+            - needed
+            - my_eta * TRAVEL_PENALTY
+            - penalty
+        )
+        if value <= 0:
+            continue
+
+        out.append((target, needed, angle, value, float(my_eta)))
     return out
 
 
