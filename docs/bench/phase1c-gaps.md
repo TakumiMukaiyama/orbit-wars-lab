@@ -162,12 +162,42 @@ d92b21e feat(agent): drive classify_defense with planet timeline      (G1)
 | external/yuriygreben-architect | 0-10-0 (0.0%) | 1-9-0 (10.0%) | +1 |
 | **TOTAL** | **33/90 (36.7%)** | **44/90 (48.9%)** | **+11 (+12.2pt)** |
 
+## P5 試行: Snipe Mission (不採用・未コミット)
+
+- 試行内容:
+  - `world.py` に `estimate_snipe_outcome(target, ledger, player, my_eta, ships_after_capture, horizon) -> (hold_turns, absorbed)` を追加し、占領後 horizon までの保持ターン数と吸収敵 ships を推定。
+  - `targeting.py` に `enumerate_snipe_candidates` を追加。中立 + ledger に敵 arrival あり + 自 eta < 敵最速 eta の条件で候補化し、スコア `production * hold_turns + absorbed - ships_needed - my_eta * TRAVEL_PENALTY`。
+  - `agent.py` で `all_cands = attack_cands + intercept_cands + snipe_cands` にマージ。
+- Run (AFTER): `runs/2026-04-27-012`
+- 単体テスト: 148 passed, 2 skipped (`TestEstimateSnipeOutcome` 4 件 + `TestEnumerateSnipeCandidates` 4 件)
+
+| 相手 | After +P4 (011) | After +P4+P5 (012) | Δ (wins) |
+|---|---|---|---|
+| baselines/nearest-sniper | 9-1-0 (90.0%) | 9-1-0 (90.0%) | = |
+| baselines/random | 10-0-0 (100.0%) | 10-0-0 (100.0%) | = |
+| baselines/starter | 9-1-0 (90.0%) | 7-3-0 (70.0%) | -2 |
+| external/kashiwaba-rl | 10-0-0 (100.0%) | 10-0-0 (100.0%) | = |
+| external/pilkwang-structured | 1-9-0 (10.0%) | 0-10-0 (0.0%) | -1 |
+| external/sigmaborov-reinforce | 3-7-0 (30.0%) | 0-10-0 (0.0%) | -3 |
+| external/sigmaborov-starter | 0-10-0 (0.0%) | 3-7-0 (30.0%) | +3 |
+| external/tamrazov-starwars | 1-9-0 (10.0%) | 0-10-0 (0.0%) | -1 |
+| external/yuriygreben-architect | 1-9-0 (10.0%) | 1-9-0 (10.0%) | = |
+| **TOTAL** | **44/90 (48.9%)** | **40/90 (44.4%)** | **-4 (-4.4pt)** |
+
+判定: 全体 -4 勝、基準「-3 以上の劣化なら revert」を超えるため**不採用**。`git restore` で未コミットの実装を破棄し、ユニットテストごと戻した。
+
+原因メモ (次回リトライ時の参考):
+- sigmaborov-reinforce に +3 だったのが -3 に急落。snipe 候補が attack 候補を value 勝負で上書きし、序盤に「占領はしたが hold しきれない中立」に先行投資して主力を削られたと推測。
+- `estimate_snipe_outcome` で失陥時の `absorbed` を "失陥直前の garrison" として計上している箇所が過大評価。失陥は実質マイナスなのに、absorbed ≥ 0 でスコアがプラス寄りになる。
+- 再挑戦の方針: (a) 失陥シナリオでは `absorbed = 0` にする、(b) スコアから `hold_turns` が horizon 未満のとき `-K * (my_eta)` のような penalty を追加、(c) snipe は starter-like 相手 (sigmaborov-starter 系) には効くので、domination mode が `behind` のときだけ活性化する条件付き導入を検討。
+
 ## 次に実装すること
 
-**P5: Snipe Mission** (`docs/bench/implement-plan.md` P5 準拠)
+**P6: Multi-source Swarm** (`docs/bench/implement-plan.md` P6 準拠) を次に試す。
 
-- `world.py` に `estimate_snipe_outcome(target, ledger, player, my_eta, ships_after_capture, horizon) -> (hold_turns, absorbed)` を追加。
-- `targeting.py` に `enumerate_snipe_candidates(...)` を追加。中立 + ledger に敵 arrival あり + 自 eta < 敵最速 eta の条件で候補化。スコア: `production * hold_turns + absorbed - ships_needed - my_eta * TRAVEL_PENALTY`。
-- `agent.py` で `all_cands = attack_cands + intercept_cands + snipe_cands` にマージ。
-- 期待: `external/pilkwang-structured` / `external/tamrazov-starwars` / `external/yuriygreben-architect` のいずれかで +1 以上。
+- 目的: 1 つの自惑星では足りない target を、複数自惑星から近い ETA で同時攻略する。
+- 実装方針: target ごとに source options を列挙し、ETA 差 `<= 2-3` の source 組合せを探し、合計 send cap が `ships_needed_to_capture_at(target, joint_eta)` を超えるなら mission 化。Phase 1 では 2-source だけでよい。
+- 期待: `external/pilkwang-structured` / `external/tamrazov-starwars` / `external/yuriygreben-architect` の 0-10% 層に対して +1〜+2 勝。これらはいずれも swarm を既に持っていて、single-source 攻撃だけでは削り負けている可能性が高い。
+
+P5 は P6 の後に `estimate_snipe_outcome` の penalty 設計を練り直してから再挑戦する。
 
