@@ -47,15 +47,20 @@ class TestShipsBudget:
         # my_eta=5 -> garrison_at_arrival = 10 + 2*5 = 20 -> budget = 21
         assert ships_budget(t, my_eta=5.0) == 21
 
+    def test_neutral_eta_production_not_included(self):
+        t = P(0, NEUTRAL_OWNER, 0, 0, ships=10, prod=2)
+        # 中立惑星は所有されるまで生産しないため、ETA 中の production は足さない
+        assert ships_budget(t, my_eta=5.0) == 11
+
     def test_already_sent_subtracted(self):
         t = P(0, 1, 0, 0, ships=10, prod=2)
         # garrison=20, already_sent=8 -> 20 - 8 + 1 = 13
         assert ships_budget(t, my_eta=5.0, already_sent=8) == 13
 
-    def test_already_sent_covers_all_returns_one(self):
+    def test_already_sent_covers_all_returns_zero(self):
         t = P(0, 1, 0, 0, ships=10, prod=0)
-        # garrison=10, already_sent=15 -> max(1, 10 - 15 + 1) = 1
-        assert ships_budget(t, my_eta=0.0, already_sent=15) == 1
+        # garrison=10, already_sent=15 -> max(0, 10 - 15 + 1) = 0
+        assert ships_budget(t, my_eta=0.0, already_sent=15) == 0
 
     def test_backward_compat_no_args(self):
         t = P(0, 1, 0, 0, ships=10)
@@ -225,14 +230,13 @@ class TestEnumerateCandidates:
         ships_pl = next(c[1] for c in cands_planned if c[0].id == 1)
         assert ships_pl < ships_no
 
-    def test_planned_fully_covered_returns_one(self):
+    def test_planned_fully_covered_excludes_candidate(self):
         mine = P(0, 0, 0, 0, ships=50)
         target = P(1, 1, 10, 0, ships=5, prod=0)
         planets = [mine, target]
-        # already_sent=100 -> max(1, 5-100+1) = 1
+        # already_sent=100 -> max(0, 5-100+1) = 0 なので候補から除外
         cands = enumerate_candidates(mine, planets, fleets=[], player=0, planned={1: 100})
-        ships_needed = next(c[1] for c in cands if c[0].id == 1)
-        assert ships_needed == 1
+        assert all(c[0].id != 1 for c in cands)
 
 
 class TestSelectMove:
@@ -255,13 +259,15 @@ class TestSelectMove:
         assert angle == pytest.approx(1.0)
         assert ships == 2
 
-    def test_negative_value_still_selected_as_best_option(self):
+    def test_negative_value_not_selected(self):
         mine = P(0, 0, 0, 0, ships=100)
         cands = [(P(1, 1, 10, 0, ships=1), 2, 0.0, -5.0)]
-        result = select_move(mine, cands)
-        assert result is not None
-        target_id, angle, ships = result
-        assert target_id == 1
+        assert select_move(mine, cands) is None
+
+    def test_zero_value_not_selected(self):
+        mine = P(0, 0, 0, 0, ships=100)
+        cands = [(P(1, 1, 10, 0, ships=1), 2, 0.0, 0.0)]
+        assert select_move(mine, cands) is None
 
 
 class TestComputeRivalETAPerPlayer:

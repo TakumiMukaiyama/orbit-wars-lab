@@ -30,10 +30,12 @@ AHEAD_THRESHOLD = 0.3
 def ships_budget(target: Planet, my_eta: float = 0.0, already_sent: int = 0) -> int:
     """占領に必要な最小艦船量。
 
-    到着時点のガリソン (駐留 + production * ETA) から既送艦を差し引く。
+    所有惑星だけ到着までの production 増分を見込む。中立惑星は生産しない。
+    既送艦で足りている場合は 0 を返し、呼び出し側で候補から除外する。
     """
-    garrison_at_arrival = target.ships + int(target.production * my_eta)
-    return max(1, garrison_at_arrival - already_sent + 1)
+    growth = 0 if target.owner == NEUTRAL_OWNER else int(target.production * my_eta)
+    garrison_at_arrival = target.ships + growth
+    return max(0, garrison_at_arrival - already_sent + 1)
 
 
 def compute_rival_eta_per_player(
@@ -170,6 +172,8 @@ def enumerate_candidates(
         # my_eta が確定してから正確な ships_needed を計算
         already_sent = planned.get(t.id, 0) if planned else 0
         ships_needed = ships_budget(t, my_eta=my_eta, already_sent=already_sent)
+        if ships_needed <= 0:
+            continue
         rival_eta = compute_rival_eta(t, player, fleets, all_planets, angular_velocity)
         value = target_value(
             my_planet, ix, iy, t.production, rival_eta, ships_needed, my_eta,
@@ -261,6 +265,8 @@ def select_move(my_planet: Planet, candidates, reserve: int = 0, my_planet_count
     best = None
     best_value = -math.inf
     for target, ships_needed, angle, value in candidates:
+        if ships_needed <= 0 or value <= 0:
+            continue
         if my_planet.ships - reserve < ships_needed:
             continue
         if value > best_value:
