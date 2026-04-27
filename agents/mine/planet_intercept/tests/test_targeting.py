@@ -541,6 +541,47 @@ class TestClassifyDefense:
         assert status == "doomed"
         assert reserve == 45
 
+    def test_timeline_saves_planet_via_own_fleet(self):
+        """自軍 in-flight fleet が先に合流して救えるケース: safe になるべき。"""
+        mine = P(0, 0, 50, 50, ships=10, prod=0)
+        # timeline 上、自軍 eta=4 40 ships -> 敵 eta=5 30 ships -> mine は owner=0 で維持
+        arrivals = [
+            Arrival(eta=4, owner=0, ships=40),
+            Arrival(eta=5, owner=1, ships=30),
+        ]
+        timeline = simulate_planet_timeline(mine, arrivals, horizon=10)
+        status, reserve = classify_defense(mine, fleets=[], player=0, timeline=timeline)
+        assert status == "safe"
+        assert reserve == 0
+
+    def test_timeline_doomed_aligns_with_first_turn_lost(self):
+        """敵のみ到着する timeline で first_turn_lost 時点の敵兵力が reserve になる。"""
+        mine = P(0, 0, 50, 50, ships=10, prod=0)
+        # eta=3 で敵 30 ships -> 戦闘後 owner=1, ships=20
+        arrivals = [Arrival(eta=3, owner=1, ships=30)]
+        timeline = simulate_planet_timeline(mine, arrivals, horizon=10)
+        status, reserve = classify_defense(mine, fleets=[], player=0, timeline=timeline)
+        assert status == "doomed"
+        # fall_turn=3 時点の state.ships は 20 (敵側)
+        assert reserve == 20
+
+    def test_timeline_threatened_when_defender_can_hold(self):
+        """timeline 上の deficit < mine.ships なら threatened。"""
+        mine = P(0, 0, 50, 50, ships=100, prod=0)
+        # 敵 fleet が到達しても mine.ships のほうが多い -> そもそも fall しない
+        # fall するケースを作るには defender=0 で ships=5、敵 20 -> fall_turn の state.ships=15
+        vulnerable = P(1, 0, 50, 50, ships=5, prod=0)
+        arrivals = [Arrival(eta=2, owner=1, ships=20)]
+        timeline = simulate_planet_timeline(vulnerable, arrivals, horizon=5)
+        # vulnerable.ships=5 < reserve=15 -> doomed のはずだが、
+        # mine.ships=100 に差し替えて呼べば threatened になる契約を確認
+        status, reserve = classify_defense(
+            Planet(id=1, owner=0, x=50, y=50, radius=1.0, ships=100, production=0),
+            fleets=[], player=0, timeline=timeline,
+        )
+        assert status == "threatened"
+        assert reserve == 15
+
 
 class TestComputeRivalEtaOrbital:
     def test_angular_velocity_signature_accepted(self):

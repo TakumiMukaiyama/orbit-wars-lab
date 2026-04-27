@@ -41,14 +41,15 @@ def agent(obs):
     else:
         mode = "neutral"
 
-    # 全自惑星の防衛ステータスを事前計算
-    defense_status: dict[int, tuple[str, int]] = {
-        p.id: classify_defense(p, fleets, player) for p in my_planets
-    }
-
     horizon = max(1, min(80, remaining_turns))
     ledger = build_arrival_ledger(planets, fleets, horizon=horizon)
     timelines = build_timelines(planets, ledger, horizon=horizon)
+
+    # 全自惑星の防衛ステータスを timeline 付きで事前計算
+    defense_status: dict[int, tuple[str, int]] = {
+        p.id: classify_defense(p, fleets, player, timeline=timelines.get(p.id))
+        for p in my_planets
+    }
 
     # planned[planet_id] = このターンに既に送った ships 合計
     planned: dict[int, int] = {}

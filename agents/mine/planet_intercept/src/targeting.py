@@ -15,7 +15,7 @@ from .geometry import (
     segment_hits_sun,
 )
 from .utils import Planet, distance, fleet_speed
-from .world import PlanetState, first_turn_lost, ships_needed_to_capture_at
+from .world import PlanetState, first_turn_lost, ships_needed_to_capture_at, state_at
 
 NEUTRAL_OWNER = -1
 
@@ -279,14 +279,31 @@ def fleet_heading_to(
     return eta_turns <= tolerance_turns
 
 
-def classify_defense(mine: Planet, fleets, player: int) -> tuple[str, int]:
-    """mine の防衛状況を ("safe"|"threatened"|"doomed", incoming_ships) で返す。
+def classify_defense(
+    mine: Planet,
+    fleets,
+    player: int,
+    timeline: list[PlanetState] | None = None,
+) -> tuple[str, int]:
+    """mine の防衛状況を ("safe"|"threatened"|"doomed", reserve) で返す。
 
-    "doomed": 守れない (mine.ships < incoming)
-    "threatened": 守れる (mine.ships >= incoming > 0)
-    "safe": 敵フリートなし
-    tolerance_turns=15 で遠距離フリートによる早まった doomed 判定を抑制する。
+    timeline があるとき:
+      first_turn_lost が None -> "safe" (自軍 in-flight で救われるケース含む)
+      そうでなければ fall turn 時点の state.ships を敵側兵力とみなし、
+        mine.ships 未満なら "doomed"、それ以外は "threatened"。
+    timeline=None のときは旧 fleet_heading_to ベース判定 (後方互換)。
     """
+    if timeline is not None:
+        fall_turn = first_turn_lost(mine, timeline, player)
+        if fall_turn is None:
+            return "safe", 0
+        state = state_at(timeline, fall_turn)
+        enemy_ships = int(state.ships) if state is not None else int(mine.ships) + 1
+        reserve = max(0, enemy_ships)
+        if mine.ships < reserve:
+            return "doomed", reserve
+        return "threatened", reserve
+
     incoming = sum(
         f.ships for f in fleets
         if f.owner != player and fleet_heading_to(f, mine, tolerance_turns=15.0)
