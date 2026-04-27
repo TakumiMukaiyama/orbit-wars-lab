@@ -9,6 +9,7 @@ from .targeting import (
     compute_domination,
     enumerate_candidates,
     enumerate_intercept_candidates,
+    enumerate_snipe_candidates,
     select_move,
 )
 from .utils import parse_obs
@@ -96,7 +97,22 @@ def agent(obs):
             timelines=timelines,
         )
         intercept_cands = [c for c in intercept_cands if c[0].id not in intercepted_ids]
-        all_cands = attack_cands + intercept_cands
+        if mode == "behind":
+            snipe_cands = enumerate_snipe_candidates(
+                mine,
+                planets,
+                fleets,
+                player,
+                angular_velocity=angular_velocity,
+                planned=planned,
+                remaining_turns=remaining_turns,
+                timelines=timelines,
+                ledger=ledger,
+                horizon=horizon,
+            )
+        else:
+            snipe_cands = []
+        all_cands = attack_cands + intercept_cands + snipe_cands
         picked = select_move(mine, all_cands, reserve=reserve, my_planet_count=n)
         if picked is None:
             continue
