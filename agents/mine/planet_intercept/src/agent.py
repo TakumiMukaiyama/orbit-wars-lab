@@ -5,7 +5,6 @@ import math
 from .targeting import (
     AHEAD_THRESHOLD,
     BEHIND_THRESHOLD,
-    build_planned_commitments,
     classify_defense,
     compute_domination,
     enumerate_candidates,
@@ -13,6 +12,7 @@ from .targeting import (
     select_move,
 )
 from .utils import parse_obs
+from .world import build_arrival_ledger, build_timelines
 
 
 def agent(obs):
@@ -46,8 +46,12 @@ def agent(obs):
         p.id: classify_defense(p, fleets, player) for p in my_planets
     }
 
-    # planned[planet_id] = 既存自フリート + このターンに既に送った ships 合計
-    planned = build_planned_commitments(planets, fleets, player)
+    horizon = max(1, min(80, remaining_turns))
+    ledger = build_arrival_ledger(planets, fleets, horizon=horizon)
+    timelines = build_timelines(planets, ledger, horizon=horizon)
+
+    # planned[planet_id] = このターンに既に送った ships 合計
+    planned: dict[int, int] = {}
 
     moves = []
     for mine in my_planets:
@@ -78,6 +82,7 @@ def agent(obs):
             planned=planned,
             mode=mode,
             remaining_turns=remaining_turns,
+            timelines=timelines,
         )
         intercept_cands = enumerate_intercept_candidates(
             mine,
@@ -85,6 +90,7 @@ def agent(obs):
             fleets,
             player,
             angular_velocity=angular_velocity,
+            timelines=timelines,
         )
         all_cands = attack_cands + intercept_cands
         picked = select_move(mine, all_cands, reserve=reserve, my_planet_count=n)

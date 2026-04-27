@@ -20,6 +20,7 @@ from src.targeting import (
     target_value,
 )
 from src.utils import Fleet, Planet
+from src.world import Arrival, simulate_planet_timeline
 
 
 def P(pid, owner, x, y, ships, prod=1):
@@ -450,6 +451,50 @@ class TestEnumerateInterceptCandidates:
         hi_values = [c[3] for c in cands if c[0].id == defended_hi.id]
         if lo_values and hi_values:
             assert max(hi_values) > max(lo_values)
+
+    def test_timeline_filters_defended_planet_that_will_hold(self):
+        home = P(0, 0, 20, 10, ships=100)
+        defended = P(1, 0, 5, 10, ships=100)
+        enemy = F(10, 1, 50, 10, angle=math.pi, from_id=99, ships=15)
+        timelines = {
+            defended.id: simulate_planet_timeline(
+                defended,
+                [Arrival(eta=10, owner=1, ships=15)],
+                horizon=20,
+            )
+        }
+
+        cands = enumerate_intercept_candidates(
+            home,
+            [home, defended],
+            fleets=[enemy],
+            player=0,
+            timelines=timelines,
+        )
+
+        assert all(c[0].id != defended.id for c in cands)
+
+    def test_timeline_allows_defended_planet_that_will_fall(self):
+        home = P(0, 0, 20, 10, ships=100)
+        defended = P(1, 0, 5, 10, ships=10)
+        enemy = F(10, 1, 50, 10, angle=math.pi, from_id=99, ships=30)
+        timelines = {
+            defended.id: simulate_planet_timeline(
+                defended,
+                [Arrival(eta=10, owner=1, ships=30)],
+                horizon=20,
+            )
+        }
+
+        cands = enumerate_intercept_candidates(
+            home,
+            [home, defended],
+            fleets=[enemy],
+            player=0,
+            timelines=timelines,
+        )
+
+        assert any(c[0].id == defended.id for c in cands)
 
 
 class TestClassifyDefense:

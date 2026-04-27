@@ -15,13 +15,19 @@ from .geometry import (
     segment_hits_sun,
 )
 from .utils import Planet, distance, fleet_speed
+from .world import PlanetState, first_turn_lost, ships_needed_to_capture_at
 
 NEUTRAL_OWNER = -1
 
 HOLD_HORIZON = 20.0
 HOLD_HORIZON_BEHIND = 4.0
 THREAT_MARGIN = 0.0
-TRAVEL_PENALTY = 0.0
+TRAVEL_PENALTY = 0.15
+ASSET_HORIZON = 120.0
+ORBITAL_OPENING_TURNS = 160
+INNER_ORBITAL_RADIUS = 34.0
+INNER_ORBITAL_BONUS = 55.0
+STATIC_HIGH_PROD_BONUS = 30.0
 
 BEHIND_THRESHOLD = -0.3
 AHEAD_THRESHOLD = 0.3
@@ -132,6 +138,9 @@ def target_value(
     my_eta: float,
     target_owner: int = NEUTRAL_OWNER,
     mode: str = "neutral",
+    remaining_turns: int | None = None,
+    is_orbital: bool = False,
+    orbital_radius: float | None = None,
 ) -> float:
     """占領価値。
 
@@ -141,14 +150,33 @@ def target_value(
     敵惑星 (target_owner != NEUTRAL_OWNER):
         production * max(0, rival_eta - my_eta) - ships
     """
-    horizon = HOLD_HORIZON_BEHIND if mode == "behind" else HOLD_HORIZON
+    if remaining_turns is None:
+        asset_horizon = HOLD_HORIZON
+    else:
+        asset_horizon = min(ASSET_HORIZON, max(HOLD_HORIZON, float(remaining_turns)))
+    horizon = HOLD_HORIZON_BEHIND if mode == "behind" else asset_horizon
+
     threat = math.isfinite(rival_eta) and (rival_eta - my_eta) <= THREAT_MARGIN
+    eta_penalty = my_eta * TRAVEL_PENALTY
+    opening_bonus = 0.0
+    elapsed_turns = 500 - remaining_turns if remaining_turns is not None else 500
+    if is_orbital and orbital_radius is not None and elapsed_turns <= ORBITAL_OPENING_TURNS:
+        if orbital_radius <= INNER_ORBITAL_RADIUS:
+            opening_bonus = INNER_ORBITAL_BONUS + production * 8.0
+    elif not is_orbital and production >= 4:
+        opening_bonus = STATIC_HIGH_PROD_BONUS
+
     if target_owner == NEUTRAL_OWNER:
         if not threat:
-            return production * horizon - ships_to_send - my_eta * TRAVEL_PENALTY
+            return production * horizon + opening_bonus - ships_to_send - eta_penalty
         return production * max(0.0, rival_eta - my_eta) - ships_to_send
-    gain = production * max(0.0, rival_eta - my_eta)
-    return gain - ships_to_send
+    if threat:
+        gain = 0.0
+    elif math.isfinite(rival_eta):
+        gain = production * min(asset_horizon, max(0.0, rival_eta - my_eta))
+    else:
+        gain = production * asset_horizon
+    return gain + opening_bonus - ships_to_send - eta_penalty
 
 
 def enumerate_candidates(
@@ -161,6 +189,7 @@ def enumerate_candidates(
     planned: dict | None = None,
     mode: str = "neutral",
     remaining_turns: int | None = None,
+    timelines: dict[int, list[PlanetState]] | None = None,
 ):
     """自分以外が所有する惑星をインターセプト位置で距離昇順ソートし上位 top_n 件を返す。
 
@@ -174,6 +203,14 @@ def enumerate_candidates(
         r = math.hypot(t.x - CENTER, t.y - CENTER)
         is_orbital = angular_velocity != 0.0 and (r + t.radius < 50)
         cur_dist = distance(my_planet, t)
+        if remaining_turns is not None:
+            elapsed_turns = 500 - remaining_turns
+            inner_bonus = 0.0
+            if is_orbital and elapsed_turns <= ORBITAL_OPENING_TURNS and r <= INNER_ORBITAL_RADIUS:
+                inner_bonus = 120.0
+            static_bonus = 40.0 if (not is_orbital and t.production >= 4) else 0.0
+            priority = t.production * 25.0 + inner_bonus + static_bonus - cur_dist
+            return (-priority, cur_dist)
         # 静止惑星を先、同グループ内は現在距離でソート
         return (1 if is_orbital else 0, cur_dist)
 
@@ -201,13 +238,26 @@ def enumerate_candidates(
         angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
         # my_eta が確定してから正確な ships_needed を計算
         already_sent = planned.get(t.id, 0) if planned else 0
-        ships_needed = ships_budget(t, my_eta=my_eta, already_sent=already_sent)
+        if timelines and t.id in timelines:
+            base_needed = ships_needed_to_capture_at(
+                t,
+                timelines[t.id],
+                player,
+                int(math.ceil(my_eta)),
+            )
+            ships_needed = max(0, base_needed - already_sent)
+        else:
+            ships_needed = ships_budget(t, my_eta=my_eta, already_sent=already_sent)
         if ships_needed <= 0:
             continue
         rival_eta = compute_rival_eta(t, player, fleets, all_planets, angular_velocity)
         value = target_value(
             my_planet, ix, iy, t.production, rival_eta, ships_needed, my_eta,
-            target_owner=t.owner, mode=mode,
+            target_owner=t.owner,
+            mode=mode,
+            remaining_turns=remaining_turns,
+            is_orbital=is_orbital,
+            orbital_radius=r,
         )
         out.append((t, ships_needed, angle, value))
     return out
@@ -254,6 +304,7 @@ def enumerate_intercept_candidates(
     fleets,
     player: int,
     angular_velocity: float = 0.0,
+    timelines: dict[int, list[PlanetState]] | None = None,
 ):
     """自惑星に向かう敵フリートへの迎撃候補。
 
@@ -265,6 +316,10 @@ def enumerate_intercept_candidates(
     for defended in all_planets:
         if defended.owner != player:
             continue
+        if timelines and defended.id in timelines:
+            fall_turn = first_turn_lost(defended, timelines[defended.id], player)
+            if fall_turn is None:
+                continue
         for f in fleets:
             if f.owner == player:
                 continue
