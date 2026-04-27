@@ -670,6 +670,74 @@ class TestClassifyDefense:
         assert reserve == 15
 
 
+from src.targeting import SwarmMission, enumerate_swarm_candidates
+
+
+class TestEnumerateSwarmCandidates:
+    def test_swarm_mission_dataclass_importable(self):
+        """SwarmMission が dataclass として使えること。"""
+        target = P(2, 1, 30, 0, ships=10, prod=1)
+        src_a = P(0, 0, 0, 0, ships=30)
+        src_b = P(1, 0, 0, 5, ships=30)
+        m = SwarmMission(
+            target=target,
+            src_a=src_a, ships_a=20, angle_a=0.0, eta_a=5.0,
+            src_b=src_b, ships_b=15, angle_b=0.1, eta_b=6.0,
+            value=10.0,
+        )
+        assert m.target.id == 2
+        assert m.ships_a == 20
+        assert m.ships_b == 15
+
+    def test_two_sources_pooled_when_each_alone_insufficient(self):
+        """各源では足りないが合算で足りる target に対して mission が返ること。"""
+        # 中立惑星: ships_needed = 31, 各 src は 30 ships -> 単独不可、合算 60 >= 31
+        target = P(2, NEUTRAL_OWNER, 10, 0, ships=30, prod=2)
+        src_a = P(0, 0, 0, 0, ships=30)
+        src_b = P(1, 0, 5, 0, ships=30)
+        missions = enumerate_swarm_candidates(
+            [src_a, src_b],
+            [src_a, src_b, target],
+            fleets=[],
+            player=0,
+        )
+        assert any(m.target.id == target.id for m in missions)
+        m = next(m for m in missions if m.target.id == target.id)
+        assert m.ships_a + m.ships_b >= 31
+        assert m.value > 0
+
+    def test_eta_too_different_excluded(self):
+        """ETA 差が ETA_SYNC_TOLERANCE を超えるペアは mission にならない。"""
+        target = P(2, 1, 100, 0, ships=30, prod=2)
+        src_near = P(0, 0, 99, 0, ships=60)   # eta ≈ 1
+        src_far  = P(1, 0, 0, 0,  ships=60)   # eta >> 3
+        missions = enumerate_swarm_candidates(
+            [src_near, src_far],
+            [src_near, src_far, target],
+            fleets=[],
+            player=0,
+        )
+        assert all(
+            not (m.src_a.id == src_near.id and m.src_b.id == src_far.id)
+            and not (m.src_a.id == src_far.id and m.src_b.id == src_near.id)
+            for m in missions
+        )
+
+    def test_fired_sources_excluded(self):
+        """fired_sources に含まれる惑星はスウォームに使われない。"""
+        target = P(2, 1, 10, 0, ships=20, prod=2)
+        src_a = P(0, 0, 0, 0, ships=60)
+        src_b = P(1, 0, 5, 0, ships=60)
+        missions = enumerate_swarm_candidates(
+            [src_a, src_b],
+            [src_a, src_b, target],
+            fleets=[],
+            player=0,
+            fired_sources={src_a.id},
+        )
+        assert all(m.src_a.id != src_a.id and m.src_b.id != src_a.id for m in missions)
+
+
 class TestComputeRivalEtaOrbital:
     def test_angular_velocity_signature_accepted(self):
         """angular_velocity 引数が受け付けられること。"""

@@ -6,6 +6,7 @@
 """
 
 import math
+from dataclasses import dataclass
 
 from .geometry import (
     fleet_intercept_point,
@@ -31,6 +32,22 @@ STATIC_HIGH_PROD_BONUS = 30.0
 
 BEHIND_THRESHOLD = -0.3
 AHEAD_THRESHOLD = 0.3
+
+ETA_SYNC_TOLERANCE = 3  # max ETA difference (turns) between swarm sources
+
+
+@dataclass
+class SwarmMission:
+    target: "Planet"
+    src_a: "Planet"
+    ships_a: int
+    angle_a: float
+    eta_a: float
+    src_b: "Planet"
+    ships_b: int
+    angle_b: float
+    eta_b: float
+    value: float
 
 
 def _fleet_forward_distance(fleet, planet) -> float:
@@ -366,6 +383,129 @@ def enumerate_intercept_candidates(
             value = save_value - ships_needed - my_eta * TRAVEL_PENALTY
             out.append((defended, ships_needed, angle, value, float(my_eta)))
     return out
+
+
+def enumerate_swarm_candidates(
+    my_planets,
+    all_planets,
+    fleets,
+    player: int,
+    angular_velocity: float = 0.0,
+    planned: dict | None = None,
+    fired_sources: set | None = None,
+    defense_status: dict | None = None,
+    mode: str = "neutral",
+    remaining_turns: int | None = None,
+    timelines: dict | None = None,
+    eta_sync_tolerance: int = ETA_SYNC_TOLERANCE,
+) -> list[SwarmMission]:
+    """2 自惑星から同一ターゲットへの協調攻撃候補を列挙する。
+
+    各ソース単独では占領不能だが合算なら可能な target を対象に、
+    ETA 差 <= eta_sync_tolerance の source ペアを探して SwarmMission を返す。
+    Phase 1: 2-source のみ。
+    """
+    from .utils import CENTER
+
+    if planned is None:
+        planned = {}
+    if fired_sources is None:
+        fired_sources = set()
+
+    available_sources = [p for p in my_planets if p.id not in fired_sources]
+    if len(available_sources) < 2:
+        return []
+
+    targets = [p for p in all_planets if p.owner != player]
+    missions: list[SwarmMission] = []
+
+    for target in targets:
+        if planned.get(target.id, 0) > 0:
+            continue
+
+        r = math.hypot(target.x - CENTER, target.y - CENTER)
+        is_orbital = angular_velocity != 0.0 and (r + target.radius < 50)
+
+        src_info: list[tuple] = []
+        for src in available_sources:
+            ships_approx = max(1, src.ships // 2)
+            if is_orbital:
+                ix, iy, eta = intercept_pos(src.x, src.y, ships_approx, target, angular_velocity)
+            else:
+                ix, iy = target.x, target.y
+                eta = route_eta(src.x, src.y, ix, iy, ships_approx)
+            if segment_hits_sun(src.x, src.y, ix, iy):
+                continue
+            if remaining_turns is not None and eta > remaining_turns:
+                continue
+            angle, _ = route_angle_and_distance(src.x, src.y, ix, iy)
+            src_info.append((src, eta, angle))
+
+        src_info.sort(key=lambda x: x[1])
+
+        rival_eta = compute_rival_eta(target, player, fleets, all_planets, angular_velocity)
+
+        for i in range(len(src_info)):
+            src_a, eta_a, angle_a = src_info[i]
+            for j in range(i + 1, len(src_info)):
+                src_b, eta_b, angle_b = src_info[j]
+                if eta_b - eta_a > eta_sync_tolerance:
+                    break
+
+                joint_eta = max(eta_a, eta_b)
+                if timelines and target.id in timelines:
+                    needed = ships_needed_to_capture_at(
+                        target, timelines[target.id], player, int(math.ceil(joint_eta))
+                    )
+                else:
+                    needed = ships_budget(target, my_eta=joint_eta)
+
+                if needed <= 0:
+                    continue
+
+                reserve_a = defense_status[src_a.id][1] if defense_status and src_a.id in defense_status else 0
+                reserve_b = defense_status[src_b.id][1] if defense_status and src_b.id in defense_status else 0
+                avail_a = max(0, src_a.ships - reserve_a)
+                avail_b = max(0, src_b.ships - reserve_b)
+
+                if avail_a + avail_b < needed:
+                    continue
+                if avail_a < 1 or avail_b < 1:
+                    continue
+
+                total_avail = avail_a + avail_b
+                ships_a = max(1, min(avail_a, math.ceil(needed * avail_a / total_avail)))
+                ships_b = needed - ships_a
+                if ships_b <= 0 or ships_b > avail_b:
+                    ships_b = min(avail_b, needed - 1)
+                    ships_a = needed - ships_b
+                if ships_a <= 0 or ships_a > avail_a:
+                    continue
+
+                value = target_value(
+                    src_a,
+                    target.x, target.y,
+                    target.production,
+                    rival_eta,
+                    ships_a + ships_b,
+                    joint_eta,
+                    target_owner=target.owner,
+                    mode=mode,
+                    remaining_turns=remaining_turns,
+                    is_orbital=is_orbital,
+                    orbital_radius=r,
+                )
+                if value <= 0:
+                    continue
+
+                missions.append(SwarmMission(
+                    target=target,
+                    src_a=src_a, ships_a=ships_a, angle_a=angle_a, eta_a=eta_a,
+                    src_b=src_b, ships_b=ships_b, angle_b=angle_b, eta_b=eta_b,
+                    value=value,
+                ))
+
+    return missions
 
 
 def select_move(my_planet: Planet, candidates, reserve: int = 0, my_planet_count: int = 1):
