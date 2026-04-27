@@ -137,8 +137,14 @@ class TestApplyPlannedArrival:
         ledger: dict = {}
         timelines = {planet.id: simulate_planet_timeline(planet, [], horizon=10)}
         apply_planned_arrival(
-            ledger, timelines, [planet],
-            target_id=planet.id, owner=0, ships=8, eta=3, horizon=10,
+            ledger,
+            timelines,
+            [planet],
+            target_id=planet.id,
+            owner=0,
+            ships=8,
+            eta=3,
+            horizon=10,
         )
         assert planet.id in ledger
         assert len(ledger[planet.id]) == 1
@@ -155,8 +161,14 @@ class TestApplyPlannedArrival:
         ledger = {planet.id: list(base_arrivals)}
         timelines = {planet.id: base_timeline}
         apply_planned_arrival(
-            ledger, timelines, [planet],
-            target_id=planet.id, owner=0, ships=40, eta=4, horizon=10,
+            ledger,
+            timelines,
+            [planet],
+            target_id=planet.id,
+            owner=0,
+            ships=40,
+            eta=4,
+            horizon=10,
         )
         # 自軍 40 が先着 -> fall しないはず
         assert first_turn_lost(planet, timelines[planet.id], player=0) is None
@@ -167,8 +179,14 @@ class TestApplyPlannedArrival:
         timelines = {planet.id: simulate_planet_timeline(planet, [], horizon=10)}
         snapshot_timeline = list(timelines[planet.id])
         apply_planned_arrival(
-            ledger, timelines, [planet],
-            target_id=planet.id, owner=0, ships=5, eta=15, horizon=10,
+            ledger,
+            timelines,
+            [planet],
+            target_id=planet.id,
+            owner=0,
+            ships=5,
+            eta=15,
+            horizon=10,
         )
         assert ledger == {}
         assert timelines[planet.id] == snapshot_timeline
@@ -179,8 +197,14 @@ class TestApplyPlannedArrival:
         timelines = {planet.id: simulate_planet_timeline(planet, [], horizon=10)}
         for eta in (7, 3, 5):
             apply_planned_arrival(
-                ledger, timelines, [planet],
-                target_id=planet.id, owner=0, ships=2, eta=eta, horizon=10,
+                ledger,
+                timelines,
+                [planet],
+                target_id=planet.id,
+                owner=0,
+                ships=2,
+                eta=eta,
+                horizon=10,
             )
         etas = [a.eta for a in ledger[planet.id]]
         assert etas == sorted(etas)

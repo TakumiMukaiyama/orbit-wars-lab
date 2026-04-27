@@ -14,12 +14,11 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from .discovery import scan_zoo
 from . import kaggle_scraper
+from .discovery import scan_zoo
 from .schemas import AgentInfo, Rating, TournamentConfig
 from .tournament import Tournament
 from .trueskill_store import TrueSkillStore
-
 
 router = APIRouter(prefix="/api")
 

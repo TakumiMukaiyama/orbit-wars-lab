@@ -2,7 +2,6 @@ import math
 from collections import defaultdict, namedtuple
 from dataclasses import dataclass, field
 
-
 # =============================================================================
 # CONFIG
 # =============================================================================

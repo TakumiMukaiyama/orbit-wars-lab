@@ -8,9 +8,9 @@ import json
 import os
 import random
 import sys
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable, Optional
 
 from .discovery import scan_zoo
 from .match import run_match
@@ -20,10 +20,10 @@ from .trueskill_store import TrueSkillStore
 
 
 def _filter_agents_by_tags(
-    agents: list["AgentInfo"],
+    agents: list[AgentInfo],
     include: list[str],
     exclude: list[str],
-) -> list["AgentInfo"]:
+) -> list[AgentInfo]:
     """Filter agents by tags.
 
     Semantics:
@@ -66,7 +66,7 @@ class Tournament:
 
     def run(
         self,
-        on_match_done: Optional[Callable[["MatchResult", int, int], None]] = None,
+        on_match_done: Callable[[MatchResult, int, int], None] | None = None,
     ) -> str:
         """Execute tournament. Return run_id (directory name).
 
@@ -86,7 +86,7 @@ class Tournament:
         replays_dir = run_dir / "replays"
         replays_dir.mkdir()
 
-        started_at = datetime.now(timezone.utc).isoformat()
+        started_at = datetime.now(UTC).isoformat()
         self._write_run_json(run_dir, run_id, started_at, None, "running", total_matches, 0)
 
         persistent_path = self.runs_root / "trueskill.json"
@@ -149,7 +149,7 @@ class Tournament:
             store.save()
             store.snapshot_to(run_dir / "trueskill.json")
 
-            finished_at = datetime.now(timezone.utc).isoformat()
+            finished_at = datetime.now(UTC).isoformat()
             self._write_run_json(
                 run_dir,
                 run_id,
@@ -207,7 +207,7 @@ class Tournament:
         run_dir: Path,
         run_id: str,
         started_at: str,
-        finished_at: Optional[str],
+        finished_at: str | None,
         status: RunStatus,
         total_matches: int,
         matches_done: int,
@@ -233,7 +233,7 @@ class Tournament:
 
     def _new_run_id(self) -> str:
         """YYYY-MM-DD-NNN — N increments for runs created the same day."""
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         prefix = now.strftime("%Y-%m-%d")
         existing = [p for p in self.runs_root.iterdir() if p.is_dir() and p.name.startswith(prefix)]
         n = len(existing) + 1

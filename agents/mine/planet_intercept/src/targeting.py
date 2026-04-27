@@ -39,7 +39,7 @@ STATIC_HIGH_PROD_BONUS = 30.0
 BEHIND_THRESHOLD = -0.3
 AHEAD_THRESHOLD = 0.3
 
-SNIPE_MIN_HOLD = 5        # hold_turns がこれ未満のとき SNIPE_HOLD_PENALTY を加算
+SNIPE_MIN_HOLD = 5  # hold_turns がこれ未満のとき SNIPE_HOLD_PENALTY を加算
 SNIPE_HOLD_PENALTY = 30.0  # 短命 snipe に対するペナルティ
 
 ETA_SYNC_TOLERANCE = 3  # max ETA difference (turns) between swarm sources
@@ -78,7 +78,8 @@ def build_planned_commitments(planets, fleets, player: int) -> dict[int, int]:
         if f.owner != player:
             continue
         candidates = [
-            t for t in targets
+            t
+            for t in targets
             if fleet_heading_to(f, t, tolerance_turns=500.0)
             and not segment_hits_sun(f.x, f.y, t.x, t.y)
         ]
@@ -278,7 +279,13 @@ def enumerate_candidates(
             continue
         rival_eta = compute_rival_eta(t, player, fleets, all_planets, angular_velocity)
         value = target_value(
-            my_planet, ix, iy, t.production, rival_eta, ships_needed, my_eta,
+            my_planet,
+            ix,
+            iy,
+            t.production,
+            rival_eta,
+            ships_needed,
+            my_eta,
             target_owner=t.owner,
             mode=mode,
             remaining_turns=remaining_turns,
@@ -331,7 +338,8 @@ def classify_defense(
         return "threatened", reserve
 
     incoming = sum(
-        f.ships for f in fleets
+        f.ships
+        for f in fleets
         if f.owner != player and fleet_heading_to(f, mine, tolerance_turns=15.0)
     )
     if incoming == 0:
@@ -434,7 +442,9 @@ def enumerate_snipe_candidates(
         is_orbital = angular_velocity != 0.0 and (r + target.radius < 50)
         if is_orbital:
             ships_approx = max(1, my_planet.ships // 2)
-            ix, iy, my_eta = intercept_pos(my_planet.x, my_planet.y, ships_approx, target, angular_velocity)
+            ix, iy, my_eta = intercept_pos(
+                my_planet.x, my_planet.y, ships_approx, target, angular_velocity
+            )
         else:
             ix, iy = target.x, target.y
             ships_approx = max(1, my_planet.ships // 2)
@@ -462,7 +472,9 @@ def enumerate_snipe_candidates(
         timeline = timelines.get(target.id) if timelines else None
         if timeline is not None:
             hold_turns, _ = estimate_snipe_outcome(
-                target, timeline, player,
+                target,
+                timeline,
+                player,
                 my_eta=int(math.ceil(my_eta)),
                 ships_after_capture=needed,
                 horizon=horizon,
@@ -474,12 +486,7 @@ def enumerate_snipe_candidates(
             continue
 
         penalty = SNIPE_HOLD_PENALTY if hold_turns < SNIPE_MIN_HOLD else 0.0
-        value = (
-            target.production * hold_turns
-            - needed
-            - my_eta * TRAVEL_PENALTY
-            - penalty
-        )
+        value = target.production * hold_turns - needed - my_eta * TRAVEL_PENALTY - penalty
         if value <= 0:
             continue
 
@@ -565,8 +572,16 @@ def enumerate_swarm_candidates(
                 if needed <= 0:
                     continue
 
-                reserve_a = defense_status[src_a.id][1] if defense_status and src_a.id in defense_status else 0
-                reserve_b = defense_status[src_b.id][1] if defense_status and src_b.id in defense_status else 0
+                reserve_a = (
+                    defense_status[src_a.id][1]
+                    if defense_status and src_a.id in defense_status
+                    else 0
+                )
+                reserve_b = (
+                    defense_status[src_b.id][1]
+                    if defense_status and src_b.id in defense_status
+                    else 0
+                )
                 avail_a = max(0, src_a.ships - reserve_a)
                 avail_b = max(0, src_b.ships - reserve_b)
 
@@ -586,7 +601,8 @@ def enumerate_swarm_candidates(
 
                 value = target_value(
                     src_a,
-                    target.x, target.y,
+                    target.x,
+                    target.y,
                     target.production,
                     rival_eta,
                     ships_a + ships_b,
@@ -600,12 +616,20 @@ def enumerate_swarm_candidates(
                 if value <= 0:
                     continue
 
-                missions.append(SwarmMission(
-                    target=target,
-                    src_a=src_a, ships_a=ships_a, angle_a=angle_a, eta_a=eta_a,
-                    src_b=src_b, ships_b=ships_b, angle_b=angle_b, eta_b=eta_b,
-                    value=value,
-                ))
+                missions.append(
+                    SwarmMission(
+                        target=target,
+                        src_a=src_a,
+                        ships_a=ships_a,
+                        angle_a=angle_a,
+                        eta_a=eta_a,
+                        src_b=src_b,
+                        ships_b=ships_b,
+                        angle_b=angle_b,
+                        eta_b=eta_b,
+                        value=value,
+                    )
+                )
 
     return missions
 

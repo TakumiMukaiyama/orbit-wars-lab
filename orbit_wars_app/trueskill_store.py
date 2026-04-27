@@ -4,14 +4,12 @@ from __future__ import annotations
 
 import json
 import shutil
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Optional
 
 import trueskill
 
 from .schemas import Format, Rating
-
 
 TS_MU_0 = 600.0
 TS_SIGMA_0 = 200.0
@@ -70,7 +68,7 @@ class TrueSkillStore:
         self,
         *,
         agent_ids: list[str],
-        winner: Optional[str],
+        winner: str | None,
         format: Format,
     ) -> None:
         """Apply TrueSkill update for one match.
@@ -134,7 +132,7 @@ class TrueSkillStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         data = {
             "schema_version": self.SCHEMA_VERSION,
-            "last_updated": datetime.now(timezone.utc).isoformat(),
+            "last_updated": datetime.now(UTC).isoformat(),
             "ratings": self._ratings,
         }
         tmp_path = self.path.with_suffix(".json.tmp")

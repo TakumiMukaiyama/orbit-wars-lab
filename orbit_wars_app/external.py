@@ -20,10 +20,9 @@ import tempfile
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
-
 
 # Kaggle CLI binary path. Override via $KAGGLE_CLI env var if your `kaggle`
 # shell alias points somewhere else (e.g. a `cd` alias vs the Python script).
@@ -43,7 +42,7 @@ SUSPICIOUS_PATTERNS: list[tuple[str, re.Pattern]] = [
 ]
 
 
-def safety_audit(source_code: str) -> Optional[str]:
+def safety_audit(source_code: str) -> str | None:
     """Scan `source_code` with regexes for suspicious import patterns.
 
     Returns:
@@ -65,7 +64,7 @@ class InstalledKernel:
     """Description of an installed external agent (fetched from a Kaggle notebook)."""
 
     kernel_slug: str
-    kernel_version: Optional[int]
+    kernel_version: int | None
     local_name: str
     folder_path: Path
 
@@ -259,7 +258,7 @@ class FetchResult:
     success: bool
     folder_path: Path
     error: str = ""
-    safety_alert: Optional[str] = None
+    safety_alert: str | None = None
 
 
 def _kaggle_get_notebook_info(kernel_slug: str) -> dict[str, Any]:
@@ -452,7 +451,7 @@ def append_installed(
     kernel_slug: str,
     local_name: str,
     kernel_version: int,
-    lb_score: Optional[float] = None,
+    lb_score: float | None = None,
 ) -> None:
     """Append an entry in the Installed section. Idempotent. Format matching seed.
 

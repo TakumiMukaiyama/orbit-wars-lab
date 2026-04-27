@@ -8,13 +8,13 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 
 @dataclass
 class MatchOutcome:
     agent_ids: list[str]
-    winner: Optional[str]  # agent_id or None (draw / error)
+    winner: str | None  # agent_id or None (draw / error)
     scores: list[int]  # final ship sum per player (planets + fleets)
     turns: int
     duration_s: float
@@ -84,9 +84,7 @@ def run_match_fast(
     )
 
 
-def _extract_outcome(
-    replay: dict, agent_ids: list[str]
-) -> tuple[Optional[str], list[int], int, str]:
+def _extract_outcome(replay: dict, agent_ids: list[str]) -> tuple[str | None, list[int], int, str]:
     """Parse terminal state: winner, per-player scores, turn count, status."""
     steps = replay.get("steps") or []
     if not steps:
@@ -169,7 +167,7 @@ def run_match_faithful(
         )
     from kaggle_environments import make
 
-    from .agent_subprocess import spawn_agent, shutdown
+    from .agent_subprocess import shutdown, spawn_agent
 
     handles: list = []
     try:

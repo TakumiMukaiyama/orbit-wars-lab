@@ -10,7 +10,6 @@ import yaml
 
 from .schemas import AgentInfo, Bucket
 
-
 _log = logging.getLogger(__name__)
 
 _DEPRECATED_FIELDS = ("source_url", "version")

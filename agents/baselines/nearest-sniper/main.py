@@ -16,6 +16,7 @@ Key concepts demonstrated:
 """
 
 import math
+
 from kaggle_environments.envs.orbit_wars.orbit_wars import Planet
 
 

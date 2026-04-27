@@ -1,5 +1,6 @@
 import math
-from kaggle_environments.envs.orbit_wars.orbit_wars import Planet, Fleet
+
+from kaggle_environments.envs.orbit_wars.orbit_wars import Fleet, Planet
 
 BOARD = 100.0
 CENTER_X, CENTER_Y = 50.0, 50.0

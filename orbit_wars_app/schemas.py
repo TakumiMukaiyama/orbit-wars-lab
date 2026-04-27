@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, Field
-
 
 Bucket = Literal["baselines", "external", "mine"]
 Format = Literal["2p", "4p"]
@@ -21,36 +20,36 @@ class AgentInfo(BaseModel):
     id: str = Field(..., description="Relative path: 'baselines/random'")
     name: str
     bucket: Bucket
-    description: Optional[str] = None
-    author: Optional[str] = None
+    description: str | None = None
+    author: str | None = None
     tags: list[str] = Field(default_factory=list)
     disabled: bool = False
     has_yaml: bool
     path: str = Field(..., description="Relative path from project root: 'agents/baselines/random'")
-    last_error: Optional[str] = None
+    last_error: str | None = None
 
     # ===== External agent fields (None for baselines/mine) =====
-    kernel_slug: Optional[str] = Field(
+    kernel_slug: str | None = Field(
         default=None,
         description="Kaggle notebook identifier: '<owner>/<slug>' — key for re-fetching",
     )
-    kernel_version: Optional[int] = Field(
+    kernel_version: int | None = Field(
         default=None,
         description="Notebook version number on Kaggle at the time of fetch",
     )
-    date_fetched: Optional[str] = None
-    license: Optional[str] = None
-    author_claimed_lb_score: Optional[float] = Field(
+    date_fetched: str | None = None
+    license: str | None = None
+    author_claimed_lb_score: float | None = Field(
         default=None,
         description="LB score extracted from notebook title — hint, NOT our ground truth",
     )
 
     # ===== DEPRECATED fields (retained for backward compat, discovery.py logs a warning) =====
-    source_url: Optional[str] = Field(
+    source_url: str | None = Field(
         default=None,
         description="DEPRECATED — we generate it from kernel_slug. Backward compat only.",
     )
-    version: Optional[str] = Field(
+    version: str | None = Field(
         default=None,
         description="DEPRECATED — replaced by kernel_version (typed int).",
     )
@@ -68,7 +67,7 @@ class Rating(BaseModel):
 class MatchResult(BaseModel):
     match_id: str
     agent_ids: list[str]
-    winner: Optional[str] = None
+    winner: str | None = None
     scores: list[int] = Field(default_factory=list)
     turns: int = 0
     duration_s: float = 0.0
@@ -80,7 +79,7 @@ class MatchResult(BaseModel):
 class RunSummary(BaseModel):
     id: str
     started_at: str
-    finished_at: Optional[str] = None
+    finished_at: str | None = None
     mode: Mode = "fast"
     format: Format = "2p"
     status: RunStatus = "running"
@@ -100,7 +99,7 @@ class TournamentConfig(BaseModel):
     shape: TournamentShape = "round-robin"
     # Required when shape="gauntlet". Must be present in agents. The runner
     # pairs the challenger against each remaining agent × games_per_pair.
-    challenger_id: Optional[str] = None
+    challenger_id: str | None = None
     # Optional: only generate pairs/tuples that include this agent ID.
     # Useful for round-robin runs where you only care about one agent's matches.
-    focus_id: Optional[str] = None
+    focus_id: str | None = None

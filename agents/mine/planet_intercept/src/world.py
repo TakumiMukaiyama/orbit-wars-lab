@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from dataclasses import dataclass
-import math
 
 from .geometry import segment_hits_sun
 from .utils import Fleet, Planet, fleet_speed

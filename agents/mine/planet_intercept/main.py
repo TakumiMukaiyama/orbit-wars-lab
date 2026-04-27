@@ -4,8 +4,8 @@ Kaggle は main.py ルートの agent 関数を呼び出す。
 src/ 配下のコードをバンドルして提出する場合もこのファイルが起点。
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(__name__))
 

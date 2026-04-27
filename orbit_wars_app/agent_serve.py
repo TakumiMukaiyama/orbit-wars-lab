@@ -17,11 +17,11 @@ import importlib.util
 import json
 import socket
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 
-def load_agent(agent_dir: str) -> Optional[Callable]:
+def load_agent(agent_dir: str) -> Callable | None:
     """Import agent_dir/main.py, return last callable in its namespace.
 
     Mirrors kaggle-environments agent.py:40-65 behavior.

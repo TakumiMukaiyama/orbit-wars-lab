@@ -18,10 +18,8 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import requests
-
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +79,7 @@ class ScrapeJob:
     status: str = "pending"  # pending | running | completed | failed
     total: int = 0
     downloaded: int = 0
-    error: Optional[str] = None
+    error: str | None = None
     replay_ids: list[int] = field(default_factory=list)
 
 
@@ -89,7 +87,7 @@ _jobs: dict[str, ScrapeJob] = {}
 _jobs_lock = threading.Lock()
 
 
-def get_job(job_id: str) -> Optional[ScrapeJob]:
+def get_job(job_id: str) -> ScrapeJob | None:
     with _jobs_lock:
         return _jobs.get(job_id)
 
@@ -102,7 +100,7 @@ def scrape_submission(
     submission_id: int,
     count: int,
     replays_root: Path,
-    job_id: Optional[str] = None,
+    job_id: str | None = None,
 ) -> ScrapeJob:
     """Synchronously scrape `count` episodes for `submission_id`.
 
@@ -172,7 +170,7 @@ def _extract_meta(payload: dict, episode_id: int) -> dict:
     team_names = info.get("TeamNames", []) or [a.get("Name") for a in agents]
     rewards = payload.get("rewards", []) if isinstance(payload, dict) else []
 
-    winner_idx: Optional[int] = None
+    winner_idx: int | None = None
     if rewards and any(r is not None for r in rewards):
         try:
             winner_idx = max(

@@ -16,11 +16,11 @@ Kaggle エンジン (orbit_wars.py) と同じ物理演算を再現し、intercep
 """
 
 import math
-import pytest
 
+import pytest
 from src.geometry import intercept_pos, route_angle_and_distance, route_eta, segment_hits_sun
 from src.targeting import enumerate_candidates
-from src.utils import CENTER, BOARD_SIZE, SUN_RADIUS, Planet, Fleet, fleet_speed
+from src.utils import BOARD_SIZE, CENTER, SUN_RADIUS, Fleet, Planet
 
 # ---- 最小エンジン再現 -------------------------------------------------
 
