@@ -90,9 +90,6 @@ class TestInterceptPos:
         # 太陽から 20 離れた軌道上 (CENTER+20, CENTER) の惑星、高速回転
         planet = P(1, -1, CENTER + 20, CENTER, ships=5)
         ix, iy, eta = intercept_pos(20, 50, 10, planet, angular_velocity=0.1)
-        # インターセプト位置は現在位置と異なるはず (惑星が動くため)
-        cur_dist = math.hypot(planet.x - 20, planet.y - 50)
-        int_dist = math.hypot(ix - 20, iy - 50)
         # インターセプト後も惑星は軌道半径 20 上にある
         assert math.hypot(ix - CENTER, iy - CENTER) == pytest.approx(20.0, abs=1.0)
         assert eta > 0

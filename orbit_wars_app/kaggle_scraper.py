@@ -135,7 +135,10 @@ def scrape_submission(
         job.total = len(to_download)
 
         for ep in to_download:
-            ep_id = int(ep.get("id"))
+            raw_id = ep.get("id")
+            if raw_id is None:
+                continue
+            ep_id = int(raw_id)
             replay_path = out_dir / f"episode_{ep_id}.json"
             if replay_path.exists():
                 job.downloaded += 1
@@ -280,7 +283,7 @@ def list_local_kaggle_replays(replays_root: Path) -> list[dict]:
                 ep_id = int(replay_file.stem.replace("episode_", ""))
             except ValueError:
                 continue
-            entry = {
+            entry: dict[str, object] = {
                 "source": "kaggle",
                 "submission_id": submission_id,
                 "episode_id": ep_id,

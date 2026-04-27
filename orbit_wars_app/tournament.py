@@ -264,6 +264,7 @@ class Tournament:
         focus_id: filter to only tuples that include the focused agent."""
         if self.config.shape == "gauntlet":
             return self._generate_gauntlet_pairs(agents)
+        pairs: list[tuple[dict, ...]]
         if self.config.format == "2p":
             pairs = list(itertools.combinations(agents, 2))
         else:

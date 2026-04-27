@@ -99,8 +99,10 @@ def _make_app(agent_fn: Callable):
 
 
 def _count_args(fn: Callable) -> int:
-    if hasattr(fn, "__code__") and hasattr(fn.__code__, "co_argcount"):
-        return int(fn.__code__.co_argcount)
+    code = getattr(fn, "__code__", None)
+    argcount = getattr(code, "co_argcount", None)
+    if isinstance(argcount, int):
+        return argcount
     return 2  # default assumption: agent(obs, cfg)
 
 

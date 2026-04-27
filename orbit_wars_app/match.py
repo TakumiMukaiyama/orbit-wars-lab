@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
+from .schemas import MatchStatus
+
 
 @dataclass
 class MatchOutcome:
@@ -79,12 +81,14 @@ def run_match_fast(
         turns=turns,
         duration_s=duration,
         seed=seed,
-        status=status,  # type: ignore[arg-type]
+        status=status,
         replay=replay,
     )
 
 
-def _extract_outcome(replay: dict, agent_ids: list[str]) -> tuple[str | None, list[int], int, str]:
+def _extract_outcome(
+    replay: dict, agent_ids: list[str]
+) -> tuple[str | None, list[int], int, MatchStatus]:
     """Parse terminal state: winner, per-player scores, turn count, status."""
     steps = replay.get("steps") or []
     if not steps:
@@ -123,6 +127,7 @@ def _extract_outcome(replay: dict, agent_ids: list[str]) -> tuple[str | None, li
 
     # Status based on any agent's final status
     statuses = [s.get("status") for s in final_step]
+    status: MatchStatus
     if "ERROR" in statuses:
         status = "crashed"
     elif "TIMEOUT" in statuses:
@@ -216,7 +221,7 @@ def run_match_faithful(
             turns=turns,
             duration_s=duration,
             seed=seed,
-            status=status,  # type: ignore[arg-type]
+            status=status,
             replay=replay,
         )
     finally:

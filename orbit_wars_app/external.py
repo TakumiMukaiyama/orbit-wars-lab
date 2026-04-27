@@ -220,7 +220,7 @@ def _append_to_section(md_path: Path, section_header: str, slug: str, reason: st
             elif stripped == "" and i + 1 < len(lines):
                 # find the next non-empty line
                 next_non_empty = next(
-                    (l for l in lines[i + 1 :] if l.strip()),
+                    (ln for ln in lines[i + 1 :] if ln.strip()),
                     None,
                 )
                 if next_non_empty is None or next_non_empty.strip().startswith("## "):
@@ -492,7 +492,7 @@ def append_installed(
                 in_section = False
             elif stripped == "" and i + 1 < len(lines):
                 next_non_empty = next(
-                    (l for l in lines[i + 1 :] if l.strip()),
+                    (ln for ln in lines[i + 1 :] if ln.strip()),
                     None,
                 )
                 if next_non_empty is None or next_non_empty.strip().startswith("## "):

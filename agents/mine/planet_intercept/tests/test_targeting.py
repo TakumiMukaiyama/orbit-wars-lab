@@ -5,6 +5,9 @@ from src.targeting import (
     AHEAD_THRESHOLD,
     BEHIND_THRESHOLD,
     NEUTRAL_OWNER,
+    SNIPE_MIN_HOLD,
+    TRAVEL_PENALTY,
+    SwarmMission,
     build_planned_commitments,
     classify_defense,
     compute_domination,
@@ -12,13 +15,15 @@ from src.targeting import (
     compute_rival_eta_per_player,
     enumerate_candidates,
     enumerate_intercept_candidates,
+    enumerate_snipe_candidates,
+    enumerate_swarm_candidates,
     fleet_heading_to,
     select_move,
     ships_budget,
     target_value,
 )
 from src.utils import Fleet, Planet
-from src.world import Arrival, simulate_planet_timeline
+from src.world import Arrival, build_arrival_ledger, build_timelines, simulate_planet_timeline
 
 
 def P(pid, owner, x, y, ships, prod=1):
@@ -677,16 +682,6 @@ class TestClassifyDefense:
         )
         assert status == "threatened"
         assert reserve == 15
-
-
-from src.targeting import (
-    SNIPE_MIN_HOLD,
-    TRAVEL_PENALTY,
-    SwarmMission,
-    enumerate_snipe_candidates,
-    enumerate_swarm_candidates,
-)
-from src.world import build_arrival_ledger, build_timelines
 
 
 class TestEnumerateSnipeCandidates:

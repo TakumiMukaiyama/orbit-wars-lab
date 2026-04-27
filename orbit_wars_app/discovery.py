@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import get_args
+from typing import cast, get_args
 
 import yaml
 
@@ -113,7 +113,7 @@ def _build_agent_info(bucket: str, agent_dir: Path, zoo_dir: Path) -> AgentInfo:
     return AgentInfo(
         id=agent_id,
         name=yaml_data.get("name") or folder_name,
-        bucket=bucket,  # type: ignore[arg-type]
+        bucket=cast(Bucket, bucket),
         description=yaml_data.get("description"),
         author=yaml_data.get("author"),
         tags=tags,
