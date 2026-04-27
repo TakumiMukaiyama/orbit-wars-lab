@@ -219,3 +219,33 @@ def build_timelines(
         planet.id: simulate_planet_timeline(planet, ledger.get(planet.id, []), horizon)
         for planet in planets
     }
+
+
+def estimate_snipe_outcome(
+    target: Planet,
+    timeline: list[PlanetState],
+    player: int,
+    my_eta: int,
+    ships_after_capture: int,
+    horizon: int,
+) -> tuple[int, int]:
+    """snipe 占領後の (hold_turns, absorbed) を推定する。
+
+    my_eta ターンに player が占領すると仮定し、その後 timeline を
+    スキャンして次の失陥ターンを探す。absorbed は常に 0
+    (失陥は利益ゼロとみなす実装方針)。
+    """
+    state = state_at(timeline, my_eta)
+    if state is not None and state.owner not in (player, NEUTRAL_OWNER):
+        return 0, 0
+
+    # my_eta 以降で enemy (非player・非neutral) が占領した瞬間を失陥ターンとみなす
+    for s in timeline:
+        if s.turn <= my_eta:
+            continue
+        if s.owner not in (player, NEUTRAL_OWNER):
+            hold_turns = s.turn - my_eta
+            return hold_turns, 0
+
+    hold_turns = horizon - my_eta
+    return max(0, hold_turns), 0

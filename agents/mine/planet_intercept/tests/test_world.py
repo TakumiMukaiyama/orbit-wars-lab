@@ -3,6 +3,7 @@ from src.world import (
     Arrival,
     apply_planned_arrival,
     build_arrival_ledger,
+    estimate_snipe_outcome,
     first_turn_lost,
     resolve_battle,
     ships_needed_to_capture_at,
@@ -183,3 +184,47 @@ class TestApplyPlannedArrival:
             )
         etas = [a.eta for a in ledger[planet.id]]
         assert etas == sorted(etas)
+
+
+class TestEstimateSnipeOutcome:
+    def test_no_enemy_arrival_holds_to_horizon(self):
+        """enemy arrival なし -> hold_turns = horizon - my_eta。"""
+        target = P(1, -1, 0, 0, ships=5, prod=2)
+        timeline = simulate_planet_timeline(target, [], horizon=20)
+        hold, absorbed = estimate_snipe_outcome(
+            target, timeline, player=0, my_eta=5, ships_after_capture=10, horizon=20
+        )
+        assert hold == 15  # 20 - 5
+        assert absorbed == 0
+
+    def test_enemy_arrives_before_my_eta_returns_zero(self):
+        """my_eta 前に enemy が占領済み -> (0, 0)。"""
+        target = P(1, -1, 0, 0, ships=5, prod=0)
+        arrivals = [Arrival(eta=3, owner=1, ships=20)]
+        timeline = simulate_planet_timeline(target, arrivals, horizon=20)
+        hold, absorbed = estimate_snipe_outcome(
+            target, timeline, player=0, my_eta=5, ships_after_capture=10, horizon=20
+        )
+        assert hold == 0
+        assert absorbed == 0
+
+    def test_enemy_arrives_after_my_eta_limits_hold(self):
+        """my_eta 後に enemy が到着 -> hold_turns は到着ターンで打ち切り。"""
+        target = P(1, -1, 0, 0, ships=5, prod=0)
+        # my_eta=3 で占領、enemy eta=8 で到着
+        arrivals = [Arrival(eta=8, owner=1, ships=30)]
+        timeline = simulate_planet_timeline(target, arrivals, horizon=20)
+        hold, absorbed = estimate_snipe_outcome(
+            target, timeline, player=0, my_eta=3, ships_after_capture=5, horizon=20
+        )
+        assert hold == 5  # 8 - 3
+        assert absorbed == 0
+
+    def test_absorbed_is_always_zero(self):
+        """absorbed は常に 0 (失陥シナリオ / 保持シナリオどちらも)。"""
+        target = P(1, -1, 0, 0, ships=5, prod=1)
+        timeline = simulate_planet_timeline(target, [], horizon=20)
+        _, absorbed = estimate_snipe_outcome(
+            target, timeline, player=0, my_eta=2, ships_after_capture=10, horizon=20
+        )
+        assert absorbed == 0
