@@ -50,6 +50,10 @@ OVEREXTEND_FLOOR = 0.4  # factor の下限
 # P3: 集中攻撃 — 既に別惑星が planned した target への追加加点
 FOCUS_BONUS_PER_PLANNED_SHIP = 0.5  # planned 1 ship ごとに value +0.5
 
+# P4: 敵高生産地フィルタ — top_n で切られた敵高生産地を別枠で救済
+HIGH_PROD_THRESHOLD = 4  # production >= この値を「高生産」とみなす
+HIGH_PROD_RESERVE = 4  # 別枠で追加する最大数
+
 BEHIND_THRESHOLD = -0.3
 AHEAD_THRESHOLD = 0.3
 
@@ -303,7 +307,17 @@ def enumerate_candidates(
         return (1 if is_orbital else 0, cur_dist)
 
     targets.sort(key=sort_key)
-    targets = targets[:top_n]
+    primary = targets[:top_n]
+    # P4: 敵高生産地を別枠で最大 HIGH_PROD_RESERVE 個追加 (top_n で切られた惑星の救済)
+    primary_ids = {t.id for t in primary}
+    reserved = [
+        t
+        for t in targets[top_n:]
+        if t.owner not in (NEUTRAL_OWNER, player)
+        and t.production >= HIGH_PROD_THRESHOLD
+        and t.id not in primary_ids
+    ][:HIGH_PROD_RESERVE]
+    targets = primary + reserved
 
     out = []
     for t in targets:
