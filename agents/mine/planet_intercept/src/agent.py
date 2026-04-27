@@ -9,6 +9,7 @@ from .targeting import (
     compute_domination,
     enumerate_candidates,
     enumerate_intercept_candidates,
+    enumerate_swarm_candidates,
     select_move,
 )
 from .utils import parse_obs
@@ -55,6 +56,8 @@ def agent(obs):
     planned: dict[int, int] = {}
     # 同一 defended planet への迎撃は 1 turn 1 本まで (細切れ迎撃で攻撃手を潰さないため)
     intercepted_ids: set[int] = set()
+    # シングルソースループで発射済みの自惑星 (スウォームパスで再利用しない)
+    fired_sources: set[int] = set()
 
     moves = []
     for mine in my_planets:
@@ -120,5 +123,44 @@ def agent(obs):
                     timeline=timelines.get(target_id),
                 )
         moves.append([mine.id, angle, ships])
+        fired_sources.add(mine.id)
+
+    # Swarm pass: 未発射ソースペアで単独不可ターゲットを協調攻略
+    swarm_missions = enumerate_swarm_candidates(
+        my_planets,
+        planets,
+        fleets,
+        player,
+        angular_velocity=angular_velocity,
+        planned=planned,
+        fired_sources=fired_sources,
+        defense_status=defense_status,
+        mode=mode,
+        remaining_turns=remaining_turns,
+        timelines=timelines,
+    )
+    swarm_missions.sort(key=lambda m: -m.value)
+    for mission in swarm_missions:
+        if mission.src_a.id in fired_sources or mission.src_b.id in fired_sources:
+            continue
+        if mission.target.id in planned:
+            continue
+        eta_a = max(1, int(math.ceil(mission.eta_a)))
+        eta_b = max(1, int(math.ceil(mission.eta_b)))
+        apply_planned_arrival(
+            ledger, timelines, planets,
+            target_id=mission.target.id, owner=player,
+            ships=mission.ships_a, eta=eta_a, horizon=horizon,
+        )
+        apply_planned_arrival(
+            ledger, timelines, planets,
+            target_id=mission.target.id, owner=player,
+            ships=mission.ships_b, eta=eta_b, horizon=horizon,
+        )
+        planned[mission.target.id] = mission.ships_a + mission.ships_b
+        moves.append([mission.src_a.id, mission.angle_a, mission.ships_a])
+        moves.append([mission.src_b.id, mission.angle_b, mission.ships_b])
+        fired_sources.add(mission.src_a.id)
+        fired_sources.add(mission.src_b.id)
 
     return moves
