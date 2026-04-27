@@ -31,9 +31,22 @@ docker-compose.override.yml
 
 # runs
 runs/
+runs/trueskill.json
 
 # Git worktrees
 .worktrees/
 
 */.venv/
 */submission.tar.gz
+
+AWS_PROFILE=infra-admin@hawkeye-dev aws logs delete-log-group \
+  --region ap-northeast-1 \
+  --log-group-name /aws/lambda/hawkeye-dev-zoomphone-webhook
+
+AWS_PROFILE=infra-admin@hawkeye-dev aws logs delete-log-group \
+  --region ap-northeast-1 \
+  --log-group-name /aws/apigateway/hawkeye-dev-zoomphone-webhook
+
+AWS_PROFILE=infra-admin@hawkeye-dev aws logs delete-log-group \
+  --region us-east-1 \
+  --log-group-name aws-waf-logs-hawkeye-dev-zoomphone-webhook

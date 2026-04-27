@@ -34,12 +34,13 @@ def _fleet_forward_distance(fleet, planet) -> float:
 
 
 def build_planned_commitments(planets, fleets, player: int) -> dict[int, int]:
-    """既に飛んでいる自フリートが到達しそうな非自惑星ごとの ships 合計。
+    """既に飛んでいる自フリートが到達しそうな中立惑星ごとの ships 合計。
 
     フリートは直線上で最初に衝突した惑星で消えるため、進行方向上で最も近い
-    非自惑星だけをコミット済みとして扱う。
+    中立惑星だけをコミット済みとして扱う。敵惑星は ownership と production による
+    必要艦数の変動が大きいため、保守的に差し引き対象から外す。
     """
-    targets = [p for p in planets if p.owner != player]
+    targets = [p for p in planets if p.owner == NEUTRAL_OWNER]
     planned: dict[int, int] = {}
     for f in fleets:
         if f.owner != player:
@@ -47,6 +48,7 @@ def build_planned_commitments(planets, fleets, player: int) -> dict[int, int]:
         candidates = [
             t for t in targets
             if fleet_heading_to(f, t, tolerance_turns=500.0)
+            and not segment_hits_sun(f.x, f.y, t.x, t.y)
         ]
         if not candidates:
             continue

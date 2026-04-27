@@ -243,7 +243,7 @@ class TestEnumerateCandidates:
 class TestBuildPlannedCommitments:
     def test_existing_own_fleet_reduces_target_budget(self):
         mine = P(0, 0, 0, 0, ships=50)
-        target = P(1, 1, 20, 0, ships=10, prod=0)
+        target = P(1, NEUTRAL_OWNER, 20, 0, ships=10, prod=0)
         fleet = F(10, 0, 5, 0, angle=0.0, from_id=0, ships=8)
         planets = [mine, target]
 
@@ -258,7 +258,7 @@ class TestBuildPlannedCommitments:
 
     def test_existing_own_fleet_covered_target_is_excluded(self):
         mine = P(0, 0, 0, 0, ships=50)
-        target = P(1, 1, 20, 0, ships=5, prod=0)
+        target = P(1, NEUTRAL_OWNER, 20, 0, ships=5, prod=0)
         fleet = F(10, 0, 5, 0, angle=0.0, from_id=0, ships=10)
         planets = [mine, target]
 
@@ -268,16 +268,32 @@ class TestBuildPlannedCommitments:
 
     def test_existing_own_fleet_counts_nearest_target_on_line(self):
         mine = P(0, 0, 0, 0, ships=50)
-        near = P(1, 1, 20, 0, ships=5, prod=0)
-        far = P(2, 1, 40, 0, ships=5, prod=0)
+        near = P(1, NEUTRAL_OWNER, 20, 0, ships=5, prod=0)
+        far = P(2, NEUTRAL_OWNER, 40, 0, ships=5, prod=0)
         fleet = F(10, 0, 5, 0, angle=0.0, from_id=0, ships=10)
 
         planned = build_planned_commitments([mine, far, near], [fleet], player=0)
         assert planned == {1: 10}
 
+    def test_enemy_planet_not_counted(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        enemy_target = P(1, 1, 20, 0, ships=5, prod=0)
+        fleet = F(10, 0, 5, 0, angle=0.0, from_id=0, ships=10)
+
+        planned = build_planned_commitments([mine, enemy_target], [fleet], player=0)
+        assert planned == {}
+
+    def test_sun_crossing_target_not_counted(self):
+        mine = P(0, 0, 0, 0, ships=50)
+        target = P(1, NEUTRAL_OWNER, 60, 50, ships=5, prod=0)
+        fleet = F(10, 0, 40, 50, angle=0.0, from_id=0, ships=10)
+
+        planned = build_planned_commitments([mine, target], [fleet], player=0)
+        assert planned == {}
+
     def test_enemy_and_miss_fleets_ignored(self):
         mine = P(0, 0, 0, 0, ships=50)
-        target = P(1, 1, 20, 0, ships=5, prod=0)
+        target = P(1, NEUTRAL_OWNER, 20, 0, ships=5, prod=0)
         enemy = F(10, 1, 5, 0, angle=0.0, from_id=99, ships=10)
         miss = F(11, 0, 5, 10, angle=0.0, from_id=0, ships=10)
 
