@@ -496,6 +496,51 @@ class TestEnumerateInterceptCandidates:
 
         assert any(c[0].id == defended.id for c in cands)
 
+    def test_timeline_intercept_ships_needed_matches_deficit(self):
+        """timeline 駆動: fall turn 時点の敵残存 + 1 を ships_needed として採用。"""
+        home = P(0, 0, 20, 10, ships=100)
+        defended = P(1, 0, 5, 10, ships=10, prod=0)
+        # 敵 30 ships 到着 -> defender 10 と衝突 -> 敵奪取 state.ships=20
+        enemy = F(10, 1, 50, 10, angle=math.pi, from_id=99, ships=30)
+        timeline = simulate_planet_timeline(
+            defended,
+            [Arrival(eta=10, owner=1, ships=30)],
+            horizon=20,
+        )
+        cands = enumerate_intercept_candidates(
+            home,
+            [home, defended],
+            fleets=[enemy],
+            player=0,
+            timelines={defended.id: timeline},
+        )
+        defended_cands = [c for c in cands if c[0].id == defended.id]
+        assert defended_cands, "intercept 候補が出てこない"
+        _, ships_needed, _, _ = defended_cands[0]
+        # 敵 30 + 1 = 31 ではなく、timeline 上 state.ships=20 + 1 = 21 になるべき
+        assert ships_needed == 21
+
+    def test_timeline_intercept_skipped_when_eta_beyond_fall(self):
+        """my_eta > fall_turn の候補は除外される。"""
+        # home を defended の反対側遠方に置く -> fleet_intercept_point の my_eta が fall_turn を超える
+        home = P(0, 0, 95, 90, ships=100)
+        defended = P(1, 0, 5, 10, ships=10, prod=0)
+        enemy = F(10, 1, 10, 10, angle=math.pi, from_id=99, ships=30)
+        # arrival eta を十分に小さく設定 (fall_turn=1)
+        timeline = simulate_planet_timeline(
+            defended,
+            [Arrival(eta=1, owner=1, ships=30)],
+            horizon=20,
+        )
+        cands = enumerate_intercept_candidates(
+            home,
+            [home, defended],
+            fleets=[enemy],
+            player=0,
+            timelines={defended.id: timeline},
+        )
+        assert all(c[0].id != defended.id for c in cands)
+
 
 class TestClassifyDefense:
     def test_no_incoming_is_safe(self):

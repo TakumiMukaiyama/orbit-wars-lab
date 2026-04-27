@@ -333,22 +333,31 @@ def enumerate_intercept_candidates(
     for defended in all_planets:
         if defended.owner != player:
             continue
-        if timelines and defended.id in timelines:
-            fall_turn = first_turn_lost(defended, timelines[defended.id], player)
+        timeline = timelines.get(defended.id) if timelines else None
+        fall_turn: int | None = None
+        deficit: int | None = None
+        if timeline is not None:
+            fall_turn = first_turn_lost(defended, timeline, player)
             if fall_turn is None:
                 continue
+            state = state_at(timeline, fall_turn)
+            if state is not None and state.owner != player:
+                deficit = max(1, int(state.ships) + 1)
         for f in fleets:
             if f.owner == player:
                 continue
             if not fleet_heading_to(f, defended):
                 continue
-            ships_needed = max(1, f.ships + 1)
+            # timeline 駆動なら fall turn 時点の敵残存 + 1、なければ旧フォールバック
+            ships_needed = deficit if deficit is not None else max(1, f.ships + 1)
             result = fleet_intercept_point(my_planet.x, my_planet.y, ships_needed, f)
             if result is None:
                 continue
             ix, iy, my_eta = result
             fleet_eta = math.hypot(f.x - defended.x, f.y - defended.y) / fleet_speed(f.ships)
             if my_eta > fleet_eta:
+                continue
+            if fall_turn is not None and my_eta > fall_turn:
                 continue
             if segment_hits_sun(my_planet.x, my_planet.y, ix, iy):
                 continue
