@@ -56,7 +56,7 @@ AHEAD_THRESHOLD = 0.3
 SNIPE_MIN_HOLD = 5  # hold_turns がこれ未満のとき SNIPE_HOLD_PENALTY を加算
 SNIPE_HOLD_PENALTY = 30.0  # 短命 snipe に対するペナルティ
 
-ETA_SYNC_TOLERANCE = 3  # max ETA difference (turns) between swarm sources
+ETA_SYNC_TOLERANCE = 8  # max ETA difference (turns) between swarm sources (P3 緩和: 3→8)
 
 
 @dataclass
