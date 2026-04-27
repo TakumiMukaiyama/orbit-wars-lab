@@ -36,6 +36,20 @@ INNER_ORBITAL_RADIUS = 34.0
 INNER_ORBITAL_BONUS = 55.0
 STATIC_HIGH_PROD_BONUS = 30.0
 
+# P5: 中央性ボーナス — 盤面中心に近いほど加点 (右寄り閉塞の回避)
+CENTRAL_REF_RADIUS = 35.0  # この距離でボーナス 0
+CENTRAL_BONUS_MAX = 40.0  # 中心 (r=0) での最大加点
+CENTRAL_OPENING_TURNS = 200  # 序盤〜中盤のみ適用 (後半は不要)
+
+# P2: 過拡張ペナルティ — 勝敗拮抗時に広げすぎた場合の中立 value 減衰
+OVEREXTEND_MIN_PLANETS = 6  # これ未満なら抑制しない (序盤は広げる)
+OVEREXTEND_DOM_WINDOW = 0.15  # |dom| < これ = 拮抗
+OVEREXTEND_DECAY_PER_PLANET = 0.08  # 惑星 1 個超過ごとに 8% 減衰
+OVEREXTEND_FLOOR = 0.4  # factor の下限
+
+# P3: 集中攻撃 — 既に別惑星が planned した target への追加加点
+FOCUS_BONUS_PER_PLANNED_SHIP = 0.5  # planned 1 ship ごとに value +0.5
+
 BEHIND_THRESHOLD = -0.3
 AHEAD_THRESHOLD = 0.3
 
@@ -155,6 +169,21 @@ def compute_domination(my_total: int, enemy_total: int) -> float:
     return (my_total - enemy_total) / total
 
 
+def _overextend_factor(my_planet_count: int, domination: float) -> float:
+    """P2: 過拡張ペナルティの乗数 (中立獲得の value 減衰)。
+
+    条件: 惑星数 >= OVEREXTEND_MIN_PLANETS かつ dom が拮抗域 (|dom| < WINDOW) のとき減衰。
+    勝敗が大差ついている場面ではこのペナルティは適用しない (勝ち確なら広げて問題ないし、
+    負け確なら一点突破に賭けるため中立価値はそのまま高い方が良い)。
+    """
+    if my_planet_count < OVEREXTEND_MIN_PLANETS:
+        return 1.0
+    if abs(domination) > OVEREXTEND_DOM_WINDOW:
+        return 1.0
+    excess = my_planet_count - OVEREXTEND_MIN_PLANETS
+    return max(OVEREXTEND_FLOOR, 1.0 - excess * OVEREXTEND_DECAY_PER_PLANET)
+
+
 def target_value(
     mine: Planet,
     target_x: float,
@@ -168,6 +197,9 @@ def target_value(
     remaining_turns: int | None = None,
     is_orbital: bool = False,
     orbital_radius: float | None = None,
+    my_planet_count: int = 0,
+    domination: float = 0.0,
+    focus_planned_ships: int = 0,
 ) -> float:
     """占領価値。
 
@@ -176,6 +208,9 @@ def target_value(
         rival 脅威あり -> production * max(0, rival_eta - my_eta) - ships
     敵惑星 (target_owner != NEUTRAL_OWNER):
         production * max(0, rival_eta - my_eta) - ships
+
+    P2: 中立 not-threat ブランチに overextend_factor を乗算。
+    P3: focus_planned_ships > 0 のとき FOCUS_BONUS_PER_PLANNED_SHIP * ships を加算。
     """
     if remaining_turns is None:
         asset_horizon = HOLD_HORIZON
@@ -193,17 +228,30 @@ def target_value(
     elif not is_orbital and production >= 4:
         opening_bonus = STATIC_HIGH_PROD_BONUS
 
+    # P5: 中央性ボーナス — 盤面中心に近い惑星ほど加点、序盤のみ有効
+    central_bonus = 0.0
+    if target_owner == NEUTRAL_OWNER and elapsed_turns <= CENTRAL_OPENING_TURNS:
+        r_target = math.hypot(target_x - 50.0, target_y - 50.0)
+        if r_target < CENTRAL_REF_RADIUS:
+            central_bonus = CENTRAL_BONUS_MAX * (1.0 - r_target / CENTRAL_REF_RADIUS)
+
+    # P3: 集中攻撃ボーナス — 既に別 source が planned した target は追加加点
+    focus_bonus = FOCUS_BONUS_PER_PLANNED_SHIP * max(0, int(focus_planned_ships))
+
     if target_owner == NEUTRAL_OWNER:
         if not threat:
-            return production * horizon + opening_bonus - ships_to_send - eta_penalty
-        return production * max(0.0, rival_eta - my_eta) - ships_to_send
+            # P2: 過拡張ペナルティ (中立 not-threat のみ)
+            factor = _overextend_factor(my_planet_count, domination)
+            base = production * horizon + opening_bonus + central_bonus
+            return base * factor + focus_bonus - ships_to_send - eta_penalty
+        return production * max(0.0, rival_eta - my_eta) - ships_to_send + focus_bonus
     if threat:
         gain = 0.0
     elif math.isfinite(rival_eta):
         gain = production * min(asset_horizon, max(0.0, rival_eta - my_eta))
     else:
         gain = production * asset_horizon
-    return gain + opening_bonus - ships_to_send - eta_penalty
+    return gain + opening_bonus + focus_bonus - ships_to_send - eta_penalty
 
 
 def enumerate_candidates(
@@ -217,6 +265,8 @@ def enumerate_candidates(
     mode: str = "neutral",
     remaining_turns: int | None = None,
     timelines: dict[int, list[PlanetState]] | None = None,
+    my_planet_count: int = 0,
+    domination: float = 0.0,
 ):
     """自分以外が所有する惑星をインターセプト位置で距離昇順ソートし上位 top_n 件を返す。
 
@@ -236,7 +286,18 @@ def enumerate_candidates(
             if is_orbital and elapsed_turns <= ORBITAL_OPENING_TURNS and r <= INNER_ORBITAL_RADIUS:
                 inner_bonus = 120.0
             static_bonus = 40.0 if (not is_orbital and t.production >= 4) else 0.0
-            priority = t.production * 25.0 + inner_bonus + static_bonus - cur_dist
+            # P5: 静止中央惑星を top_n に残りやすくする
+            central_bonus_sort = 0.0
+            if (
+                t.owner == NEUTRAL_OWNER
+                and not is_orbital
+                and elapsed_turns <= CENTRAL_OPENING_TURNS
+                and r < CENTRAL_REF_RADIUS
+            ):
+                central_bonus_sort = CENTRAL_BONUS_MAX * (1.0 - r / CENTRAL_REF_RADIUS)
+            priority = (
+                t.production * 25.0 + inner_bonus + static_bonus + central_bonus_sort - cur_dist
+            )
             return (-priority, cur_dist)
         # 静止惑星を先、同グループ内は現在距離でソート
         return (1 if is_orbital else 0, cur_dist)
@@ -262,7 +323,6 @@ def enumerate_candidates(
             continue
         if remaining_turns is not None and my_eta > remaining_turns:
             continue
-        angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
         # my_eta が確定してから正確な ships_needed を計算
         already_sent = planned.get(t.id, 0) if planned else 0
         if timelines and t.id in timelines:
@@ -277,7 +337,30 @@ def enumerate_candidates(
             ships_needed = ships_budget(t, my_eta=my_eta, already_sent=already_sent)
         if ships_needed <= 0:
             continue
+        # P0: 実 ships で会合点を再計算 (ships_approx との乖離で狙いが外れる問題の修正)
+        if is_orbital and ships_needed != ships_approx:
+            ix, iy, my_eta = intercept_pos(
+                my_planet.x, my_planet.y, ships_needed, t, angular_velocity
+            )
+            if segment_hits_sun(my_planet.x, my_planet.y, ix, iy):
+                continue
+            if remaining_turns is not None and my_eta > remaining_turns:
+                continue
+            if timelines and t.id in timelines:
+                base_needed = ships_needed_to_capture_at(
+                    t,
+                    timelines[t.id],
+                    player,
+                    int(math.ceil(my_eta)),
+                )
+                ships_needed = max(0, base_needed - already_sent)
+            else:
+                ships_needed = ships_budget(t, my_eta=my_eta, already_sent=already_sent)
+            if ships_needed <= 0:
+                continue
+        angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
         rival_eta = compute_rival_eta(t, player, fleets, all_planets, angular_velocity)
+        focus_planned = int(planned.get(t.id, 0)) if planned else 0
         value = target_value(
             my_planet,
             ix,
@@ -291,6 +374,9 @@ def enumerate_candidates(
             remaining_turns=remaining_turns,
             is_orbital=is_orbital,
             orbital_radius=r,
+            my_planet_count=my_planet_count,
+            domination=domination,
+            focus_planned_ships=focus_planned,
         )
         out.append((t, ships_needed, angle, value, float(my_eta)))
     return out
@@ -347,6 +433,62 @@ def classify_defense(
     if mine.ships >= incoming:
         return "threatened", incoming
     return "doomed", incoming
+
+
+def enumerate_support_candidates(
+    my_planet: Planet,
+    all_planets,
+    player: int,
+    timelines: dict[int, list[PlanetState]] | None = None,
+    planned: dict | None = None,
+    remaining_turns: int | None = None,
+) -> list:
+    """threatened / doomed な他の自惑星への着地補強候補。
+
+    intercept (空中迎撃) とは別の枠。timeline 上 fall_turn がある自惑星に対して、
+    my_eta <= fall_turn 内に到達でき、state.ships + 1 の deficit を埋められる
+    ships を送る。value = production * HOLD_HORIZON - ships - eta*TRAVEL_PENALTY。
+    """
+    if timelines is None:
+        return []
+    if planned is None:
+        planned = {}
+
+    out = []
+    for ally in all_planets:
+        if ally.owner != player:
+            continue
+        if ally.id == my_planet.id:
+            continue
+        timeline = timelines.get(ally.id)
+        if timeline is None:
+            continue
+        fall_turn = first_turn_lost(ally, timeline, player)
+        if fall_turn is None:
+            continue
+        state = state_at(timeline, fall_turn)
+        if state is None or state.owner == player:
+            continue
+        # ally 静止前提で route_eta。軌道惑星への support は現状同様に
+        # 現在位置狙いで良い (fall_turn は小さく、軌道移動は無視できる)。
+        my_eta = route_eta(my_planet.x, my_planet.y, ally.x, ally.y, max(1, my_planet.ships))
+        if my_eta > fall_turn:
+            continue
+        if segment_hits_sun(my_planet.x, my_planet.y, ally.x, ally.y):
+            continue
+        if remaining_turns is not None and my_eta > remaining_turns:
+            continue
+        already_sent = planned.get(ally.id, 0)
+        deficit = max(1, int(state.ships) + 1)
+        ships_needed = max(0, deficit - already_sent)
+        if ships_needed <= 0:
+            continue
+        angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ally.x, ally.y)
+        value = ally.production * HOLD_HORIZON - ships_needed - my_eta * TRAVEL_PENALTY
+        if value <= 0:
+            continue
+        out.append((ally, ships_needed, angle, value, float(my_eta)))
+    return out
 
 
 def enumerate_intercept_candidates(
@@ -457,7 +599,6 @@ def enumerate_snipe_candidates(
         if remaining_turns is not None and my_eta > remaining_turns:
             continue
 
-        angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
         already_sent = planned.get(target.id, 0)
         if timelines and target.id in timelines:
             needed = ships_needed_to_capture_at(
@@ -468,6 +609,27 @@ def enumerate_snipe_candidates(
         needed = max(0, needed - already_sent)
         if needed <= 0:
             continue
+        # P0: 実 ships で会合点を再計算
+        if is_orbital and needed != ships_approx:
+            ix, iy, my_eta = intercept_pos(
+                my_planet.x, my_planet.y, needed, target, angular_velocity
+            )
+            if my_eta >= enemy_min_eta:
+                continue
+            if segment_hits_sun(my_planet.x, my_planet.y, ix, iy):
+                continue
+            if remaining_turns is not None and my_eta > remaining_turns:
+                continue
+            if timelines and target.id in timelines:
+                needed = ships_needed_to_capture_at(
+                    target, timelines[target.id], player, int(math.ceil(my_eta))
+                )
+            else:
+                needed = ships_budget(target, my_eta=my_eta)
+            needed = max(0, needed - already_sent)
+            if needed <= 0:
+                continue
+        angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
 
         timeline = timelines.get(target.id) if timelines else None
         if timeline is not None:

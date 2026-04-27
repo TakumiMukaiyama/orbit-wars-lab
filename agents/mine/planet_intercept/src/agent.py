@@ -12,6 +12,7 @@ from .targeting import (
     enumerate_candidates,
     enumerate_intercept_candidates,
     enumerate_snipe_candidates,
+    enumerate_support_candidates,
     select_move,
 )
 from .utils import parse_obs
@@ -96,6 +97,8 @@ def agent(obs):
             mode=mode,
             remaining_turns=remaining_turns,
             timelines=timelines,
+            my_planet_count=n,
+            domination=dom,
         )
         intercept_cands = enumerate_intercept_candidates(
             mine,
@@ -106,6 +109,15 @@ def agent(obs):
             timelines=timelines,
         )
         intercept_cands = [c for c in intercept_cands if c[0].id not in intercepted_ids]
+        support_cands = enumerate_support_candidates(
+            mine,
+            planets,
+            player,
+            timelines=timelines,
+            planned=planned,
+            remaining_turns=remaining_turns,
+        )
+        support_cands = [c for c in support_cands if c[0].id not in intercepted_ids]
         if mode == "behind":
             snipe_cands = enumerate_snipe_candidates(
                 mine,
@@ -121,7 +133,7 @@ def agent(obs):
             )
         else:
             snipe_cands = []
-        all_cands = attack_cands + intercept_cands + snipe_cands
+        all_cands = attack_cands + intercept_cands + support_cands + snipe_cands
         picked = select_move(mine, all_cands, reserve=reserve, my_planet_count=n)
         if _cand_log_enabled():
             _cand_log(
