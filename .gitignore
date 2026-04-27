@@ -34,3 +34,6 @@ runs/
 
 # Git worktrees
 .worktrees/
+
+*/.venv/
+*/submission.tar.gz
