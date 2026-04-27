@@ -394,6 +394,9 @@ def enumerate_intercept_candidates(
     return out
 
 
+SNIPE_ENEMY_ETA_LIMIT = 20  # この ETA 以内に enemy が来る中立だけ snipe 対象
+
+
 def enumerate_snipe_candidates(
     my_planet: Planet,
     all_planets,
@@ -405,10 +408,12 @@ def enumerate_snipe_candidates(
     timelines: dict | None = None,
     ledger: dict | None = None,
     horizon: int = 80,
+    enemy_eta_limit: int = SNIPE_ENEMY_ETA_LIMIT,
 ) -> list:
     """中立惑星への snipe 候補を列挙する。
 
-    条件: 中立 + ledger に enemy arrival あり + 自 eta < 最速 enemy eta
+    条件: 中立 + ledger に enemy arrival あり (eta <= enemy_eta_limit)
+          + 自 eta < 最速 enemy eta
     value = production * hold_turns - ships_needed - my_eta * TRAVEL_PENALTY
             - (SNIPE_HOLD_PENALTY if hold_turns < SNIPE_MIN_HOLD else 0)
     """
@@ -425,7 +430,10 @@ def enumerate_snipe_candidates(
             continue
         if target.id == my_planet.id:
             continue
-        enemy_arrivals = [a for a in ledger.get(target.id, []) if a.owner != player]
+        enemy_arrivals = [
+            a for a in ledger.get(target.id, [])
+            if a.owner != player and a.eta <= enemy_eta_limit
+        ]
         if not enemy_arrivals:
             continue
         enemy_min_eta = min(a.eta for a in enemy_arrivals)

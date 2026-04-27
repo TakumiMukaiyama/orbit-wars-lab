@@ -97,7 +97,7 @@ def agent(obs):
             timelines=timelines,
         )
         intercept_cands = [c for c in intercept_cands if c[0].id not in intercepted_ids]
-        if mode == "behind":
+        if mode == "behind" and n >= 3:
             snipe_cands = enumerate_snipe_candidates(
                 mine,
                 planets,
