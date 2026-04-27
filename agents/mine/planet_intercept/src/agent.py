@@ -2,6 +2,8 @@
 
 import math
 
+from .cand_log import is_enabled as _cand_log_enabled
+from .cand_log import log_turn as _cand_log
 from .targeting import (
     AHEAD_THRESHOLD,
     BEHIND_THRESHOLD,
@@ -17,7 +19,20 @@ from .world import apply_planned_arrival, build_arrival_ledger, build_timelines
 
 
 def agent(obs):
-    player, planets, fleets, angular_velocity, remaining_turns = parse_obs(obs)
+    (
+        player,
+        planets,
+        fleets,
+        angular_velocity,
+        remaining_turns,
+        comet_ids,
+        step,
+    ) = parse_obs(obs)
+
+    # 彗星は楕円軌道 + 消滅 + 生産 1 ship/turn で、本エージェントの円軌道前提
+    # (intercept_pos) と value モデルに合わないため、候補生成前に除外する。
+    if comet_ids:
+        planets = [p for p in planets if p.id not in comet_ids]
 
     my_planets = [p for p in planets if p.owner == player]
     if not my_planets:
@@ -26,13 +41,9 @@ def agent(obs):
     n = len(my_planets)
 
     # domination mode
-    my_total = (
-        sum(p.ships for p in my_planets)
-        + sum(f.ships for f in fleets if f.owner == player)
-    )
-    enemy_total = (
-        sum(p.ships for p in planets if p.owner not in (player, -1))
-        + sum(f.ships for f in fleets if f.owner not in (player, -1))
+    my_total = sum(p.ships for p in my_planets) + sum(f.ships for f in fleets if f.owner == player)
+    enemy_total = sum(p.ships for p in planets if p.owner not in (player, -1)) + sum(
+        f.ships for f in fleets if f.owner not in (player, -1)
     )
     dom = compute_domination(my_total, enemy_total)
     if dom < BEHIND_THRESHOLD:
@@ -48,8 +59,7 @@ def agent(obs):
 
     # 全自惑星の防衛ステータスを timeline 付きで事前計算
     defense_status: dict[int, tuple[str, int]] = {
-        p.id: classify_defense(p, fleets, player, timeline=timelines.get(p.id))
-        for p in my_planets
+        p.id: classify_defense(p, fleets, player, timeline=timelines.get(p.id)) for p in my_planets
     }
 
     # planned[planet_id] = このターンに既に送った ships 合計
@@ -64,8 +74,7 @@ def agent(obs):
         if status == "doomed" and n > 1:
             # safe または threatened の自惑星にだけ退避する
             safe_allies = [
-                p for p in my_planets
-                if p.id != mine.id and defense_status[p.id][0] != "doomed"
+                p for p in my_planets if p.id != mine.id and defense_status[p.id][0] != "doomed"
             ]
             if safe_allies:
                 nearest_ally = min(
@@ -114,6 +123,21 @@ def agent(obs):
             snipe_cands = []
         all_cands = attack_cands + intercept_cands + snipe_cands
         picked = select_move(mine, all_cands, reserve=reserve, my_planet_count=n)
+        if _cand_log_enabled():
+            _cand_log(
+                step=step,
+                player=player,
+                mine=mine,
+                mode=mode,
+                reserve=reserve,
+                attack=attack_cands,
+                intercept=intercept_cands,
+                snipe=snipe_cands,
+                picked_target=(picked[0] if picked is not None else None),
+                fleets=fleets,
+                planets=planets,
+                angular_velocity=angular_velocity,
+            )
         if picked is None:
             continue
         target_id, angle, ships, my_eta = picked
@@ -122,9 +146,14 @@ def agent(obs):
         # 採用した手を ledger/timelines に反映 (後続惑星が最新状態で判断できる)
         arrival_eta = max(1, int(math.ceil(my_eta)))
         apply_planned_arrival(
-            ledger, timelines, planets,
-            target_id=target_id, owner=player, ships=ships,
-            eta=arrival_eta, horizon=horizon,
+            ledger,
+            timelines,
+            planets,
+            target_id=target_id,
+            owner=player,
+            ships=ships,
+            eta=arrival_eta,
+            horizon=horizon,
         )
         # 反映によって自惑星の timeline が変わった場合は defense_status を再計算
         if target_id in defense_status:
@@ -132,7 +161,9 @@ def agent(obs):
             target_planet = next((p for p in my_planets if p.id == target_id), None)
             if target_planet is not None:
                 defense_status[target_id] = classify_defense(
-                    target_planet, fleets, player,
+                    target_planet,
+                    fleets,
+                    player,
                     timeline=timelines.get(target_id),
                 )
         moves.append([mine.id, angle, ships])

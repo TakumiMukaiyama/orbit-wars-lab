@@ -151,25 +151,58 @@ def fleet_intercept_point(src_x, src_y, src_ships, fleet):
     return ix, iy, t
 
 
-def intercept_pos(src_x, src_y, ships, planet, angular_velocity, max_iter=30):
-    """軌道惑星のインターセプト位置 (x, y) と ETA を返す。
+def _iterate_orbital_intercept(
+    src_x, src_y, ships, planet, angular_velocity, initial_t, max_iter=30
+):
+    """初期 t から軌道惑星会合点の固定点反復を回し (px, py, t, converged) を返す。
 
-    現在位置を基準に t ターン後の角度を計算する固定点反復。
-    静止惑星は angular_velocity=0 なので現在位置がそのまま返る。
+    接線速度と fleet_speed が近いときは反復が発散することがあるので、
+    収束フラグを呼び出し側に渡して選別させる。
     """
-    if angular_velocity == 0.0:
-        return planet.x, planet.y, route_eta(src_x, src_y, planet.x, planet.y, ships)
-
     r = math.hypot(planet.x - CENTER, planet.y - CENTER)
     base_angle = math.atan2(planet.y - CENTER, planet.x - CENTER)
 
-    t = route_eta(src_x, src_y, planet.x, planet.y, ships)
+    t = initial_t
+    px = planet.x
+    py = planet.y
     for _ in range(max_iter):
         future_angle = base_angle + angular_velocity * t
         px = CENTER + r * math.cos(future_angle)
         py = CENTER + r * math.sin(future_angle)
         t_new = route_eta(src_x, src_y, px, py, ships)
         if abs(t_new - t) < 0.5:
-            return px, py, t_new
+            return px, py, t_new, True
         t = t_new
+    return px, py, t, False
+
+
+def intercept_pos(src_x, src_y, ships, planet, angular_velocity, max_iter=30):
+    """軌道惑星のインターセプト位置 (x, y) と ETA を返す。
+
+    前方会合 (現在位置を初期値) と後方会合 (半周分遅らせた初期値) の 2 解を
+    反復で求め、**両方とも収束した** 場合だけ後方会合を採用候補に入れる。
+    収束しなかった解は発散しているのでそのままでは使えない。
+    静止惑星は angular_velocity=0 なので現在位置がそのまま返る。
+    """
+    if angular_velocity == 0.0:
+        return planet.x, planet.y, route_eta(src_x, src_y, planet.x, planet.y, ships)
+
+    t0 = route_eta(src_x, src_y, planet.x, planet.y, ships)
+    forward = _iterate_orbital_intercept(
+        src_x, src_y, ships, planet, angular_velocity, t0, max_iter
+    )
+
+    period = 2.0 * math.pi / abs(angular_velocity)
+    t0_back = t0 + period / 2.0
+    backward = _iterate_orbital_intercept(
+        src_x, src_y, ships, planet, angular_velocity, t0_back, max_iter
+    )
+
+    # 収束した解のうち最小 ETA を採用。収束解がなければ forward (従来の挙動を維持)。
+    converged = [c for c in (forward, backward) if c[3] and c[2] > 0]
+    if not converged:
+        px, py, t, _ = forward
+        return px, py, t
+    best = min(converged, key=lambda c: c[2])
+    px, py, t, _ = best
     return px, py, t

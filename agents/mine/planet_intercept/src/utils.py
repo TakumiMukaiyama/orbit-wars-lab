@@ -33,16 +33,19 @@ def parse_obs(obs):
         player = obs.get("player", 0)
         angular_velocity = obs.get("angular_velocity", 0.0)
         step = obs.get("step", 0)
+        comet_planet_ids = obs.get("comet_planet_ids", []) or []
     else:
         raw_planets = obs.planets
         raw_fleets = obs.fleets
         player = obs.player
         angular_velocity = getattr(obs, "angular_velocity", 0.0)
         step = getattr(obs, "step", 0)
+        comet_planet_ids = getattr(obs, "comet_planet_ids", []) or []
     planets = [Planet(*p) for p in raw_planets]
     fleets = [Fleet(*f) for f in raw_fleets]
     remaining_turns = 500 - step
-    return player, planets, fleets, angular_velocity, remaining_turns
+    comet_ids = frozenset(int(i) for i in comet_planet_ids)
+    return player, planets, fleets, angular_velocity, remaining_turns, comet_ids, step
 
 
 def angle_to(src: Planet, dst: Planet) -> float:

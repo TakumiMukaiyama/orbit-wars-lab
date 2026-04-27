@@ -1,7 +1,6 @@
 import math
 
 import pytest
-
 from src.geometry import (
     _point_to_segment_distance,
     fleet_intercept_point,
@@ -12,6 +11,7 @@ from src.geometry import (
     tangent_waypoint,
 )
 from src.utils import CENTER, SUN_RADIUS, fleet_speed
+
 from tests.test_targeting import F, P
 
 
@@ -105,6 +105,20 @@ class TestInterceptPos:
 
         eta_to_intercept = _eta(10, 10, ix, iy, 10)
         assert abs(eta_to_intercept - eta) < 1.0
+
+    def test_backward_solution_not_worse_than_forward_only(self):
+        """後方会合解を追加した結果、ETA は旧実装 (前方会合のみ) 以下になる。"""
+        from src.geometry import _iterate_orbital_intercept
+        from src.geometry import route_eta as _eta
+
+        planet = P(1, -1, CENTER + 25, CENTER, ships=5)
+        av = 0.05
+        # 旧実装相当: 前方会合 (現在位置初期値) のみ
+        t0 = _eta(10, 10, planet.x, planet.y, 10)
+        _, _, forward_t, _ = _iterate_orbital_intercept(10, 10, 10, planet, av, t0)
+        _, _, combined_t = intercept_pos(10, 10, 10, planet, av)
+        # 2 解のうち最短を採るので、結合版は前方のみと同等以下になる
+        assert combined_t <= forward_t + 1e-6
 
 
 class TestPointToSegmentDistanceParity:
