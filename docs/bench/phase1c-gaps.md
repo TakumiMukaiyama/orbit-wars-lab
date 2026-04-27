@@ -123,3 +123,51 @@ d92b21e feat(agent): drive classify_defense with planet timeline      (G1)
 <G2>    feat(agent): apply planned arrivals back into ledger/timeline (G2)
 ```
 
+## P4: Intercept dedup + travel-penalty value
+
+- 変更:
+  - `targeting.py::enumerate_intercept_candidates` の value 式を `save_value - ships_needed - my_eta * TRAVEL_PENALTY` に変更 (近い自惑星から撃つほうが優先されるようにする)。
+  - `agent.py` に `intercepted_ids: set[int]` を導入し、同一 defended planet への迎撃を 1 turn 1 本までに制限 (複数自惑星から細切れ 2-4 艦の迎撃が集まり攻撃手が消える副作用を抑える)。
+  - ship_needed は G3 で timeline 駆動済みなのでここでは触らない。
+- Run (AFTER): `runs/2026-04-27-011`
+- 単体テスト: 140 passed, 2 skipped (`TestEnumerateInterceptCandidates` に `test_value_penalizes_travel_time` と `test_value_regression_timeline_ships_needed` を追加)
+
+| 相手 | After G1+G3+G2 (010) | After +P4 (011) | Δ (wins) |
+|---|---|---|---|
+| baselines/nearest-sniper | 10-0-0 (100.0%) | 9-1-0 (90.0%) | -1 |
+| baselines/random | 10-0-0 (100.0%) | 10-0-0 (100.0%) | = |
+| baselines/starter | 5-5-0 (50.0%) | 9-1-0 (90.0%) | +4 |
+| external/kashiwaba-rl | 10-0-0 (100.0%) | 10-0-0 (100.0%) | = |
+| external/pilkwang-structured | 1-9-0 (10.0%) | 1-9-0 (10.0%) | = |
+| external/sigmaborov-reinforce | 1-9-0 (10.0%) | 3-7-0 (30.0%) | +2 |
+| external/sigmaborov-starter | 3-7-0 (30.0%) | 0-10-0 (0.0%) | -3 |
+| external/tamrazov-starwars | 0-10-0 (0.0%) | 1-9-0 (10.0%) | +1 |
+| external/yuriygreben-architect | 1-9-0 (10.0%) | 1-9-0 (10.0%) | = |
+| **TOTAL** | **41/90 (45.6%)** | **44/90 (48.9%)** | **+3 (+3.3pt)** |
+
+判定: 全体 +3 勝、starter に対して +4 と大きく改善。sigmaborov-starter は -3 で劣化しているが、「細切れ迎撃が消えて攻撃手が増えた」副作用が別形で出た可能性。全体トレンドは改善、基準 (≥41/90、random/kashiwaba-rl/nearest-sniper 維持) を満たすので採用。sigmaborov-starter への回帰は P5/P6 の材料として観察。
+
+## 4 ギャップ合計 (ベースライン比)
+
+| 相手 | G0 (007) | G1+G3+G2+P4 (011) | Δ (wins) |
+|---|---|---|---|
+| baselines/nearest-sniper | 7-3-0 (70.0%) | 9-1-0 (90.0%) | +2 |
+| baselines/random | 10-0-0 (100.0%) | 10-0-0 (100.0%) | = |
+| baselines/starter | 4-6-0 (40.0%) | 9-1-0 (90.0%) | +5 |
+| external/kashiwaba-rl | 10-0-0 (100.0%) | 10-0-0 (100.0%) | = |
+| external/pilkwang-structured | 1-9-0 (10.0%) | 1-9-0 (10.0%) | = |
+| external/sigmaborov-reinforce | 0-10-0 (0.0%) | 3-7-0 (30.0%) | +3 |
+| external/sigmaborov-starter | 1-9-0 (10.0%) | 0-10-0 (0.0%) | -1 |
+| external/tamrazov-starwars | 0-10-0 (0.0%) | 1-9-0 (10.0%) | +1 |
+| external/yuriygreben-architect | 0-10-0 (0.0%) | 1-9-0 (10.0%) | +1 |
+| **TOTAL** | **33/90 (36.7%)** | **44/90 (48.9%)** | **+11 (+12.2pt)** |
+
+## 次に実装すること
+
+**P5: Snipe Mission** (`docs/bench/implement-plan.md` P5 準拠)
+
+- `world.py` に `estimate_snipe_outcome(target, ledger, player, my_eta, ships_after_capture, horizon) -> (hold_turns, absorbed)` を追加。
+- `targeting.py` に `enumerate_snipe_candidates(...)` を追加。中立 + ledger に敵 arrival あり + 自 eta < 敵最速 eta の条件で候補化。スコア: `production * hold_turns + absorbed - ships_needed - my_eta * TRAVEL_PENALTY`。
+- `agent.py` で `all_cands = attack_cands + intercept_cands + snipe_cands` にマージ。
+- 期待: `external/pilkwang-structured` / `external/tamrazov-starwars` / `external/yuriygreben-architect` のいずれかで +1 以上。
+

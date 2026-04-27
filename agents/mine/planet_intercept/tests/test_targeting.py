@@ -542,6 +542,49 @@ class TestEnumerateInterceptCandidates:
         )
         assert all(c[0].id != defended.id for c in cands)
 
+    def test_value_penalizes_travel_time(self):
+        """同一 defended / 同一 threat に対し、my_eta が大きい自惑星ほど value が小さい。"""
+        defended = P(1, 0, 5, 10, ships=10, prod=0)
+        enemy = F(10, 1, 50, 10, angle=math.pi, from_id=99, ships=30)
+        timeline = simulate_planet_timeline(
+            defended,
+            [Arrival(eta=10, owner=1, ships=30)],
+            horizon=20,
+        )
+        # fleet の軌跡上、near は敵に近く my_eta 小、far は敵から遠く my_eta 大。
+        near = P(0, 0, 30, 10, ships=100)
+        far = P(2, 0, 15, 10, ships=100)
+
+        near_cands = enumerate_intercept_candidates(
+            near, [near, defended], fleets=[enemy], player=0,
+            timelines={defended.id: timeline},
+        )
+        far_cands = enumerate_intercept_candidates(
+            far, [far, defended], fleets=[enemy], player=0,
+            timelines={defended.id: timeline},
+        )
+        near_best = max(c[3] for c in near_cands if c[0].id == defended.id)
+        far_best = max(c[3] for c in far_cands if c[0].id == defended.id)
+        assert near_best > far_best
+
+    def test_value_regression_timeline_ships_needed(self):
+        """G3 回帰: value 式変更後も ships_needed は timeline 上の不足分を使う。"""
+        home = P(0, 0, 20, 10, ships=100)
+        defended = P(1, 0, 5, 10, ships=10, prod=0)
+        enemy = F(10, 1, 50, 10, angle=math.pi, from_id=99, ships=30)
+        timeline = simulate_planet_timeline(
+            defended,
+            [Arrival(eta=10, owner=1, ships=30)],
+            horizon=20,
+        )
+        cands = enumerate_intercept_candidates(
+            home, [home, defended], fleets=[enemy], player=0,
+            timelines={defended.id: timeline},
+        )
+        defended_cands = [c for c in cands if c[0].id == defended.id]
+        assert defended_cands
+        assert defended_cands[0][1] == 21
+
 
 class TestClassifyDefense:
     def test_no_incoming_is_safe(self):

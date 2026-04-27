@@ -53,6 +53,8 @@ def agent(obs):
 
     # planned[planet_id] = このターンに既に送った ships 合計
     planned: dict[int, int] = {}
+    # 同一 defended planet への迎撃は 1 turn 1 本まで (細切れ迎撃で攻撃手を潰さないため)
+    intercepted_ids: set[int] = set()
 
     moves = []
     for mine in my_planets:
@@ -93,6 +95,7 @@ def agent(obs):
             angular_velocity=angular_velocity,
             timelines=timelines,
         )
+        intercept_cands = [c for c in intercept_cands if c[0].id not in intercepted_ids]
         all_cands = attack_cands + intercept_cands
         picked = select_move(mine, all_cands, reserve=reserve, my_planet_count=n)
         if picked is None:
@@ -109,6 +112,7 @@ def agent(obs):
         )
         # 反映によって自惑星の timeline が変わった場合は defense_status を再計算
         if target_id in defense_status:
+            intercepted_ids.add(target_id)
             target_planet = next((p for p in my_planets if p.id == target_id), None)
             if target_planet is not None:
                 defense_status[target_id] = classify_defense(

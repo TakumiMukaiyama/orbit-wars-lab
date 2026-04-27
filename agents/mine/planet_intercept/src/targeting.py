@@ -363,7 +363,7 @@ def enumerate_intercept_candidates(
                 continue
             angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
             save_value = defended.production * HOLD_HORIZON
-            value = save_value - ships_needed
+            value = save_value - ships_needed - my_eta * TRAVEL_PENALTY
             out.append((defended, ships_needed, angle, value, float(my_eta)))
     return out
 
