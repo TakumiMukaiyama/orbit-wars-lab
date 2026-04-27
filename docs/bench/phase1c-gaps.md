@@ -201,6 +201,51 @@ d92b21e feat(agent): drive classify_defense with planet timeline      (G1)
 
 P5 は P6 の後に `estimate_snipe_outcome` の penalty 設計を練り直してから再挑戦する。
 
+## P5v2: Snipe Mission 再設計 (不採用・revert 済み)
+
+- 試行内容 (2 回):
+  - v2a (runs/2026-04-27-016): `absorbed=0` + `hold_turns < SNIPE_MIN_HOLD` ペナルティ + `behind` 限定マージ
+  - v2b (runs/2026-04-27-017): v2a に加え `n >= 3` 制約 + `enemy_eta_limit=20` で snipe 対象を絞り込み
+- `targeting.py` の `enumerate_snipe_candidates` / `world.py` の `estimate_snipe_outcome` はコードとして残存 (テストも維持)。`agent.py` のマージ部分のみ revert 済み。
+
+### v2a 結果 (016)
+
+| 相手 | P4 (011) | v2a (016) | Δ |
+|---|---|---|---|
+| baselines/nearest-sniper | 9-1 (90%) | 8-2 (80%) | -1 |
+| baselines/random | 10-0 (100%) | 10-0 (100%) | = |
+| baselines/starter | 9-1 (90%) | 9-1 (90%) | = |
+| external/kashiwaba-rl | 10-0 (100%) | 10-0 (100%) | = |
+| external/pilkwang-structured | 1-9 (10%) | 1-9 (10%) | = |
+| external/sigmaborov-reinforce | 3-7 (30%) | 1-9 (10%) | -2 |
+| external/sigmaborov-starter | 0-10 (0%) | 1-9 (10%) | +1 |
+| external/tamrazov-starwars | 1-9 (10%) | 0-10 (0%) | -1 |
+| external/yuriygreben-architect | 1-9 (10%) | 2-8 (20%) | +1 |
+| **TOTAL** | **44/90 (48.9%)** | **42/90 (46.7%)** | **-2** |
+
+### v2b 結果 (017) - n>=3 + enemy_eta_limit=20
+
+| 相手 | P4 (011) | v2b (017) | Δ |
+|---|---|---|---|
+| baselines/nearest-sniper | 9-1 (90%) | 8-2 (80%) | -1 |
+| baselines/random | 10-0 (100%) | 10-0 (100%) | = |
+| baselines/starter | 9-1 (90%) | 6-4 (60%) | -3 |
+| external/kashiwaba-rl | 10-0 (100%) | 10-0 (100%) | = |
+| external/pilkwang-structured | 1-9 (10%) | 1-9 (10%) | = |
+| external/sigmaborov-reinforce | 3-7 (30%) | 2-8 (20%) | -1 |
+| external/sigmaborov-starter | 0-10 (0%) | 1-9 (10%) | +1 |
+| external/tamrazov-starwars | 1-9 (10%) | 0-10 (0%) | -1 |
+| external/yuriygreben-architect | 1-9 (10%) | 0-10 (0%) | -1 |
+| **TOTAL** | **44/90 (48.9%)** | **38/90 (42.2%)** | **-6** |
+
+判定: 両試行とも P4 を下回るため**不採用**。
+
+原因メモ:
+- v2a は sigmaborov-reinforce -2 が主因。`behind` モード = 負け局面 = 艦が乏しいとき snipe で中立に使い、防衛・反攻が共に弱まる根本的な矛盾。
+- v2b で `n >= 3` 絞りを加えたら starter が -3 に急落。`n >= 3` のとき snipe が通常攻撃を上書きし starter 相手への効率攻撃が減った。
+- **snipe の本質問題**: 「behind (負けている) ときだけ発動」は艦が一番足りないタイミングであり、snipe に使う余裕がない。通常攻撃との value 競合を完全に分離するか、単独オプション (全モードで value 競合せず専用予算を割り当て) でないと機能しない。
+- 次に試すなら: (a) 専用艦数枠 (defense_reserve とは別に snipe_budget を割り当て)、(b) 通常候補との value 競合なしで snipe を別パスで発動。ただし設計コストが高いため、他の改善を先に試した方が効率的。
+
 ## P6: Multi-source Swarm (不採用・revert 済み)
 
 - 試行内容:
