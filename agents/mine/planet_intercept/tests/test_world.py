@@ -1,6 +1,7 @@
 from src.utils import Fleet, Planet
 from src.world import (
     Arrival,
+    apply_planned_arrival,
     build_arrival_ledger,
     first_turn_lost,
     resolve_battle,
@@ -127,3 +128,58 @@ class TestTimeline:
         timeline = simulate_planet_timeline(planet, [], horizon=5)
 
         assert ships_needed_to_capture_at(planet, timeline, player=0, eta=5) == 0
+
+
+class TestApplyPlannedArrival:
+    def test_adds_arrival_to_ledger(self):
+        planet = P(1, -1, 20, 0, ships=5, prod=0)
+        ledger: dict = {}
+        timelines = {planet.id: simulate_planet_timeline(planet, [], horizon=10)}
+        apply_planned_arrival(
+            ledger, timelines, [planet],
+            target_id=planet.id, owner=0, ships=8, eta=3, horizon=10,
+        )
+        assert planet.id in ledger
+        assert len(ledger[planet.id]) == 1
+        a = ledger[planet.id][0]
+        assert a.eta == 3 and a.owner == 0 and a.ships == 8
+
+    def test_timeline_reflects_new_arrival(self):
+        # 自軍所有の惑星で敵 fleet に落ちる予定 -> 自軍 arrival を追加すれば救われる
+        planet = P(1, 0, 50, 50, ships=5, prod=0)
+        base_arrivals = [Arrival(eta=5, owner=1, ships=30)]
+        base_timeline = simulate_planet_timeline(planet, base_arrivals, horizon=10)
+        assert first_turn_lost(planet, base_timeline, player=0) == 5
+
+        ledger = {planet.id: list(base_arrivals)}
+        timelines = {planet.id: base_timeline}
+        apply_planned_arrival(
+            ledger, timelines, [planet],
+            target_id=planet.id, owner=0, ships=40, eta=4, horizon=10,
+        )
+        # 自軍 40 が先着 -> fall しないはず
+        assert first_turn_lost(planet, timelines[planet.id], player=0) is None
+
+    def test_ignores_eta_beyond_horizon(self):
+        planet = P(1, -1, 20, 0, ships=5, prod=0)
+        ledger: dict = {}
+        timelines = {planet.id: simulate_planet_timeline(planet, [], horizon=10)}
+        snapshot_timeline = list(timelines[planet.id])
+        apply_planned_arrival(
+            ledger, timelines, [planet],
+            target_id=planet.id, owner=0, ships=5, eta=15, horizon=10,
+        )
+        assert ledger == {}
+        assert timelines[planet.id] == snapshot_timeline
+
+    def test_multiple_arrivals_sorted_by_eta(self):
+        planet = P(1, -1, 20, 0, ships=5, prod=0)
+        ledger: dict = {}
+        timelines = {planet.id: simulate_planet_timeline(planet, [], horizon=10)}
+        for eta in (7, 3, 5):
+            apply_planned_arrival(
+                ledger, timelines, [planet],
+                target_id=planet.id, owner=0, ships=2, eta=eta, horizon=10,
+            )
+        etas = [a.eta for a in ledger[planet.id]]
+        assert etas == sorted(etas)

@@ -317,10 +317,11 @@ class TestSelectMove:
         ]
         picked = select_move(mine, cands, reserve=5)
         assert picked is not None
-        target_id, angle, ships = picked
+        target_id, angle, ships, my_eta = picked
         assert target_id == 2  # P(2) が value 最大
         assert angle == pytest.approx(1.0)
         assert ships == 2
+        assert my_eta == 0.0  # 4-tuple 候補なので my_eta=0.0
 
     def test_negative_value_not_selected(self):
         mine = P(0, 0, 0, 0, ships=100)
@@ -418,7 +419,7 @@ class TestEnumerateInterceptCandidates:
         assert len(cands) >= 1
         defended_cands = [c for c in cands if c[0].id == defended.id]
         assert len(defended_cands) >= 1
-        _, ships_needed, _, _ = defended_cands[0]
+        ships_needed = defended_cands[0][1]
         assert ships_needed >= enemy.ships + 1
 
     def test_only_enemies_counted(self):
@@ -516,7 +517,7 @@ class TestEnumerateInterceptCandidates:
         )
         defended_cands = [c for c in cands if c[0].id == defended.id]
         assert defended_cands, "intercept 候補が出てこない"
-        _, ships_needed, _, _ = defended_cands[0]
+        ships_needed = defended_cands[0][1]
         # 敵 30 + 1 = 31 ではなく、timeline 上 state.ships=20 + 1 = 21 になるべき
         assert ships_needed == 21
 

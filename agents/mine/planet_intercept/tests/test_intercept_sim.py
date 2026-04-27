@@ -364,7 +364,8 @@ class TestSunExclusion:
         ]
         all_planets = [mine] + enemies
         cands = enumerate_candidates(mine, all_planets, fleets=[], player=0)
-        for target, ships_needed, angle, value in cands:
+        for cand in cands:
+            target, _, angle, _ = cand[0], cand[1], cand[2], cand[3]
             # 発射角から直進先を計算して太陽を通らないか確認
             # angle から延長線上の点 (十分遠い点) を計算
             far_x = mine.x + math.cos(angle) * 200

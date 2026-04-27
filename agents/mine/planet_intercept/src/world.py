@@ -88,6 +88,35 @@ def build_arrival_ledger(
     return {pid: sorted(arrivals, key=lambda a: a.eta) for pid, arrivals in ledger.items()}
 
 
+def apply_planned_arrival(
+    ledger: dict[int, list[Arrival]],
+    timelines: dict[int, list[PlanetState]],
+    planets: list[Planet],
+    target_id: int,
+    owner: int,
+    ships: int,
+    eta: int,
+    horizon: int,
+) -> None:
+    """採用した手を ledger/timelines に in-place 反映する。
+
+    eta が [1, horizon] 外、ships <= 0、target 不在のいずれでも no-op。
+    ledger[target_id] は eta 昇順で保たれ、timelines[target_id] は
+    simulate_planet_timeline で再構築される。
+    """
+    if ships <= 0 or eta < 1 or eta > horizon:
+        return
+    planet = next((p for p in planets if p.id == target_id), None)
+    if planet is None:
+        return
+
+    arrivals = list(ledger.get(target_id, []))
+    arrivals.append(Arrival(eta=int(eta), owner=int(owner), ships=int(ships)))
+    arrivals.sort(key=lambda a: a.eta)
+    ledger[target_id] = arrivals
+    timelines[target_id] = simulate_planet_timeline(planet, arrivals, horizon=horizon)
+
+
 def resolve_battle(
     current_owner: int,
     current_ships: int,

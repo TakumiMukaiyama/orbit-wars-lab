@@ -259,7 +259,7 @@ def enumerate_candidates(
             is_orbital=is_orbital,
             orbital_radius=r,
         )
-        out.append((t, ships_needed, angle, value))
+        out.append((t, ships_needed, angle, value, float(my_eta)))
     return out
 
 
@@ -364,23 +364,27 @@ def enumerate_intercept_candidates(
             angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
             save_value = defended.production * HOLD_HORIZON
             value = save_value - ships_needed
-            out.append((defended, ships_needed, angle, value))
+            out.append((defended, ships_needed, angle, value, float(my_eta)))
     return out
 
 
 def select_move(my_planet: Planet, candidates, reserve: int = 0, my_planet_count: int = 1):
     """value 最大の発射可能候補を返す。なければ None。
 
-    返り値: (target_id, angle, ships_needed) または None
+    返り値: (target_id, angle, ships_needed, my_eta) または None。
+    候補タプルは (target, ships_needed, angle, value) または
+    (target, ships_needed, angle, value, my_eta) を受け付ける。
     """
     best = None
     best_value = -math.inf
-    for target, ships_needed, angle, value in candidates:
+    for cand in candidates:
+        target, ships_needed, angle, value = cand[0], cand[1], cand[2], cand[3]
+        my_eta = float(cand[4]) if len(cand) >= 5 else 0.0
         if ships_needed <= 0 or value <= 0:
             continue
         if my_planet.ships - reserve < ships_needed:
             continue
         if value > best_value:
             best_value = value
-            best = (target.id, angle, ships_needed)
+            best = (target.id, angle, ships_needed, my_eta)
     return best

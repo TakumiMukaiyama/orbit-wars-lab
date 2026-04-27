@@ -12,7 +12,7 @@ from .targeting import (
     select_move,
 )
 from .utils import parse_obs
-from .world import build_arrival_ledger, build_timelines
+from .world import apply_planned_arrival, build_arrival_ledger, build_timelines
 
 
 def agent(obs):
@@ -97,9 +97,24 @@ def agent(obs):
         picked = select_move(mine, all_cands, reserve=reserve, my_planet_count=n)
         if picked is None:
             continue
-        target_id, angle, ships = picked
+        target_id, angle, ships, my_eta = picked
         # planned に直接記録 (逆引き不要)
         planned[target_id] = planned.get(target_id, 0) + ships
+        # 採用した手を ledger/timelines に反映 (後続惑星が最新状態で判断できる)
+        arrival_eta = max(1, int(math.ceil(my_eta)))
+        apply_planned_arrival(
+            ledger, timelines, planets,
+            target_id=target_id, owner=player, ships=ships,
+            eta=arrival_eta, horizon=horizon,
+        )
+        # 反映によって自惑星の timeline が変わった場合は defense_status を再計算
+        if target_id in defense_status:
+            target_planet = next((p for p in my_planets if p.id == target_id), None)
+            if target_planet is not None:
+                defense_status[target_id] = classify_defense(
+                    target_planet, fleets, player,
+                    timeline=timelines.get(target_id),
+                )
         moves.append([mine.id, angle, ships])
 
     return moves
