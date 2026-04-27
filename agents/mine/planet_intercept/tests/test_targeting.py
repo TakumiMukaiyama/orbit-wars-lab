@@ -613,8 +613,6 @@ class TestClassifyDefense:
 
     def test_timeline_threatened_when_defender_can_hold(self):
         """timeline 上の deficit < mine.ships なら threatened。"""
-        mine = P(0, 0, 50, 50, ships=100, prod=0)
-        # 敵 fleet が到達しても mine.ships のほうが多い -> そもそも fall しない
         # fall するケースを作るには defender=0 で ships=5、敵 20 -> fall_turn の state.ships=15
         vulnerable = P(1, 0, 50, 50, ships=5, prod=0)
         arrivals = [Arrival(eta=2, owner=1, ships=20)]
