@@ -689,9 +689,8 @@ class TestEnumerateSnipeCandidates:
         target = P(1, NEUTRAL_OWNER, 10, 0, ships=5, prod=2)
         enemy_planet = P(2, 1, 90, 0, ships=10)
         planets = [my_planet, target, enemy_planet]
-        # fleet を target に近づけて eta < SNIPE_ENEMY_ETA_LIMIT になるようにする
         enemy_fleet = Fleet(
-            id=10, owner=1, x=30, y=0,
+            id=10, owner=1, x=50, y=0,
             angle=_math.pi,
             from_planet_id=99, ships=10,
         )
