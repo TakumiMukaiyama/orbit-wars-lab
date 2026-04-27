@@ -191,6 +191,29 @@ d92b21e feat(agent): drive classify_defense with planet timeline      (G1)
 - `estimate_snipe_outcome` で失陥時の `absorbed` を "失陥直前の garrison" として計上している箇所が過大評価。失陥は実質マイナスなのに、absorbed ≥ 0 でスコアがプラス寄りになる。
 - 再挑戦の方針: (a) 失陥シナリオでは `absorbed = 0` にする、(b) スコアから `hold_turns` が horizon 未満のとき `-K * (my_eta)` のような penalty を追加、(c) snipe は starter-like 相手 (sigmaborov-starter 系) には効くので、domination mode が `behind` のときだけ活性化する条件付き導入を検討。
 
+## 守備閾値実験: min_reserve + max_send_ratio (不採用)
+
+- 試行内容:
+  - `select_move` に `MIN_RESERVE` (固定残留 ships) と `MAX_SEND_RATIO` (1 回送出の上限比率) を追加。
+  - run-018: `MIN_RESERVE=15, MAX_SEND_RATIO=0.50`
+  - run-020: `MIN_RESERVE=8, MAX_SEND_RATIO=0.65`
+
+| 設定 | TOTAL | Δ vs 011 |
+|---|---|---|
+| baseline (011) | 44/90 (48.9%) | - |
+| reserve=15, ratio=0.50 (018) | 35/90 (38.9%) | -9 |
+| reserve=8, ratio=0.65 (020) | 37/90 (41.1%) | -7 |
+
+判定: 両設定とも P4 を下回るため**不採用**。変更を revert し制約を撤去した。
+
+原因分析:
+- **制約が正常な攻撃手を大量に潰した**: run-011 の勝ちゲームのリプレイで制約に引っかかる launch の割合を計測すると、`reserve=15, ratio=0.50` では **勝ちゲームの 44.5%** の launch がブロック対象になっていた (`reserve=8, ratio=0.65` でも 34.4%)。
+- **負けゲームとブロック率の差が小さい**: 負けゲームでは 71.7% / 58.5% がブロック対象だったが、差分 (~27pt / ~24pt) は「守れていたはずの負けゲーム」より「止めてしまった勝ちゲームの攻撃手」の方が多数派だったことを示す。
+- **固定閾値は文脈盲目**: 序盤で全惑星の ships が少ない状況では `min_reserve=8` でも制約がきつく、正常な序盤展開を潰す。production スケールと無関係な一律閾値はミスマッチ。
+- **over-commit (r=-0.586) は原因でなく結果**: 「負けているから無理攻撃が増える」という因果の可能性が高く、守備閾値で抑えても根本は解決しない。
+
+今後: 同方向を再挑戦するなら「production スケールに比例した閾値」または「timeline で防衛が手薄になる直前だけ発動する動的制約」が必要。ただし現時点では他の改善を優先する。
+
 ## 次に実装すること
 
 **P6: Multi-source Swarm** (`docs/bench/implement-plan.md` P6 準拠) を次に試す。
