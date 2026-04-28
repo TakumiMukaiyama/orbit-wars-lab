@@ -1005,3 +1005,89 @@ class TestTargetValueWithMode:
         )
         # 敵惑星の価値式は mode によらない
         assert v_behind == pytest.approx(v_neutral)
+
+
+class TestEnumerateCandidatesP6:
+    def test_long_hold_gives_positive_value(self):
+        """敵が来ない timeline では正の value を返す (中立惑星)"""
+        from src.world import PlanetState
+
+        mine = P(0, 0, 0, 0, ships=50)
+        # 中立惑星: owner=-1, ships=1
+        target = P(1, -1, 10, 0, ships=1, prod=3)
+        planets = [mine, target]
+        # timeline: my_eta≈10 到着後は自軍所有で敵が来ない
+        long_hold = [
+            PlanetState(turn=t, owner=(-1 if t < 11 else 0), ships=3)
+            for t in range(1, 81)
+        ]
+
+        cands = enumerate_candidates(
+            mine, planets, fleets=[], player=0,
+            timelines={1: long_hold}, remaining_turns=500,
+        )
+        assert any(c[0].id == 1 and c[3] > 0 for c in cands)
+
+    def test_short_hold_has_lower_value_than_long_hold(self):
+        """敵がすぐ来る timeline は敵が来ない timeline より value が低い (中立惑星)"""
+        from src.world import PlanetState
+
+        mine = P(0, 0, 0, 0, ships=50)
+        target = P(1, -1, 10, 0, ships=1, prod=3)
+        planets = [mine, target]
+
+        # my_eta≈10 で占領後、turn 12 に敵来る -> hold=2
+        short_hold = [
+            PlanetState(turn=t, owner=(-1 if t < 11 else (1 if t >= 12 else 0)), ships=3)
+            for t in range(1, 81)
+        ]
+        # 敵が来ない -> hold=70
+        long_hold = [
+            PlanetState(turn=t, owner=(-1 if t < 11 else 0), ships=3)
+            for t in range(1, 81)
+        ]
+
+        cands_short = enumerate_candidates(
+            mine, planets, fleets=[], player=0,
+            timelines={1: short_hold}, remaining_turns=500,
+        )
+        cands_long = enumerate_candidates(
+            mine, planets, fleets=[], player=0,
+            timelines={1: long_hold}, remaining_turns=500,
+        )
+        val_short = next((c[3] for c in cands_short if c[0].id == 1), None)
+        val_long = next((c[3] for c in cands_long if c[0].id == 1), None)
+        # short は除外されるか、または long より低い
+        if val_short is not None and val_long is not None:
+            assert val_short < val_long
+        else:
+            # short が除外 (hold<=0) される場合も正しい動作
+            assert val_long is not None
+
+    def test_hold_zero_excluded_from_candidates(self):
+        """hold_turns=0 の惑星は候補から除外される (horizon == my_eta のケース)"""
+        import math
+        from src.world import PlanetState, estimate_hold_turns
+        from src.geometry import route_eta
+
+        mine = P(0, 0, 0, 0, ships=50)
+        # distance=80 -> my_eta が大きい
+        target = P(1, -1, 80, 0, ships=1, prod=3)
+        planets = [mine, target]
+        # remaining_turns を my_eta と同じ値に調整 -> horizon=my_eta -> hold=0
+        my_eta = route_eta(mine.x, mine.y, target.x, target.y, 2)
+        horizon = int(math.ceil(my_eta))
+        timeline = [
+            PlanetState(turn=t, owner=(-1 if t <= horizon else 0), ships=3)
+            for t in range(1, 81)
+        ]
+        # hold = horizon - ceil(my_eta) = 0
+        hold = estimate_hold_turns(timeline, player=0, my_eta=horizon, horizon=horizon)
+        assert hold == 0  # 前提確認
+
+        cands = enumerate_candidates(
+            mine, planets, fleets=[], player=0,
+            timelines={1: timeline}, remaining_turns=horizon,
+        )
+        # hold=0 なので P6 パスで continue
+        assert all(c[0].id != 1 for c in cands)
