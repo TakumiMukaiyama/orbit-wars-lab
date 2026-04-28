@@ -63,6 +63,11 @@ SNIPE_HOLD_PENALTY = 30.0  # 短命 snipe に対するペナルティ
 
 ETA_SYNC_TOLERANCE = 8  # max ETA difference (turns) between swarm sources (P3 緩和: 3→8)
 
+# P7: Opening Expand 改善
+OPENING_TURNS = 40           # opening phase の長さ (ターン数)
+MAX_EXPAND_PER_TURN = 2      # 1 ターンあたり expand 発射上限
+CONTENTION_BONUS_MAX = 60.0  # opp_eta が eta に近づくほど加算される最大ボーナス
+
 
 @dataclass
 class SwarmMission:
@@ -272,8 +277,13 @@ def enumerate_candidates(
     timelines: dict[int, list[PlanetState]] | None = None,
     my_planet_count: int = 0,
     domination: float = 0.0,
+    is_opening: bool = False,
 ):
     """自分以外が所有する惑星をインターセプト位置で距離昇順ソートし上位 top_n 件を返す。
+
+    is_opening=True のとき、中立惑星への expand 候補に P7 競合フィルタ + ボーナスを適用する:
+    - opp_eta <= my_eta の候補は除外 (先着不可)
+    - opp_eta が近いほど value に加点 (先取り価値)
 
     返り値: list[(target, ships_needed, angle, value)]
     """
@@ -378,6 +388,15 @@ def enumerate_candidates(
         rival_eta = compute_rival_eta(t, player, fleets, all_planets, angular_velocity)
         focus_planned = int(planned.get(t.id, 0)) if planned else 0
 
+        # P7: opening expand — 中立惑星の競合フィルタ + 先取りボーナス
+        opening_contention_bonus = 0.0
+        if is_opening and t.owner == NEUTRAL_OWNER:
+            opp_eta = rival_eta if math.isfinite(rival_eta) else None
+            bonus = expand_priority_score(opp_eta, my_eta)
+            if bonus == -math.inf:
+                continue
+            opening_contention_bonus = bonus
+
         # P6: timeline ベースの hold_turns 価値計算 (静止惑星のみ)
         if timelines and t.id in timelines and not is_orbital:
             _horizon = max(1, min(80, remaining_turns)) if remaining_turns is not None else 80
@@ -401,6 +420,7 @@ def enumerate_candidates(
                 + _opening_bonus
                 + _central_bonus
                 + _focus_bonus
+                + opening_contention_bonus
                 - ships_needed
                 - my_eta * TRAVEL_PENALTY
             )
@@ -421,7 +441,7 @@ def enumerate_candidates(
                 my_planet_count=my_planet_count,
                 domination=domination,
                 focus_planned_ships=focus_planned,
-            )
+            ) + opening_contention_bonus
         out.append((t, ships_needed, angle, value, float(my_eta)))
     return out
 
@@ -838,6 +858,25 @@ def enumerate_swarm_candidates(
                 )
 
     return missions
+
+
+def expand_priority_score(
+    opp_eta: float | None,
+    eta: float,
+) -> float:
+    """開幕 expand での競合ボーナス。
+
+    opp_eta が eta に近いほど高く加点 (先取り価値)。
+    opp_eta が None (競合なし) なら 0.0 を返す。
+    opp_eta <= eta なら競合相手が先着するため -inf を返し、呼び出し側で除外できるようにする。
+    """
+    if opp_eta is None:
+        return 0.0
+    if opp_eta <= eta:
+        return -math.inf
+    gap = opp_eta - eta
+    # gap が 0 に近いほど加点が大きい (最大 CONTENTION_BONUS_MAX)
+    return CONTENTION_BONUS_MAX / (1.0 + gap)
 
 
 def select_move(my_planet: Planet, candidates, reserve: int = 0, my_planet_count: int = 1):

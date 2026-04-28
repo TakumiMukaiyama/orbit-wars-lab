@@ -7,6 +7,9 @@ from .cand_log import log_turn as _cand_log
 from .targeting import (
     AHEAD_THRESHOLD,
     BEHIND_THRESHOLD,
+    MAX_EXPAND_PER_TURN,
+    NEUTRAL_OWNER,
+    OPENING_TURNS,
     classify_defense,
     compute_domination,
     enumerate_candidates,
@@ -58,15 +61,27 @@ def agent(obs):
     ledger = build_arrival_ledger(planets, fleets, horizon=horizon)
     timelines = build_timelines(planets, ledger, horizon=horizon)
 
+    # P7: opening phase フラグ (elapsed_turns < OPENING_TURNS)
+    elapsed_turns = 500 - remaining_turns
+    is_opening = elapsed_turns < OPENING_TURNS
+
     # 全自惑星の防衛ステータスを timeline 付きで事前計算
     defense_status: dict[int, tuple[str, int]] = {
         p.id: classify_defense(p, fleets, player, timeline=timelines.get(p.id)) for p in my_planets
     }
 
+    # P7: opening phase では defense reserve を 50% に絞り expand を優先する
+    if is_opening:
+        defense_status = {
+            pid: (status, reserve // 2) for pid, (status, reserve) in defense_status.items()
+        }
+
     # planned[planet_id] = このターンに既に送った ships 合計
     planned: dict[int, int] = {}
     # 同一 defended planet への迎撃は 1 turn 1 本まで (細切れ迎撃で攻撃手を潰さないため)
     intercepted_ids: set[int] = set()
+    # P7: opening phase での expand 発射数カウント
+    expand_fired_this_turn: int = 0
 
     moves = []
     for mine in my_planets:
@@ -99,6 +114,7 @@ def agent(obs):
             timelines=timelines,
             my_planet_count=n,
             domination=dom,
+            is_opening=is_opening,
         )
         intercept_cands = enumerate_intercept_candidates(
             mine,
@@ -153,6 +169,14 @@ def agent(obs):
         if picked is None:
             continue
         target_id, angle, ships, my_eta = picked
+
+        # P7: opening expand 上限チェック (中立惑星への攻撃を max_expand_per_turn で制限)
+        target_planet_obj = next((p for p in planets if p.id == target_id), None)
+        if is_opening and target_planet_obj is not None and target_planet_obj.owner == NEUTRAL_OWNER:
+            if expand_fired_this_turn >= MAX_EXPAND_PER_TURN:
+                continue
+            expand_fired_this_turn += 1
+
         # planned に直接記録 (逆引き不要)
         planned[target_id] = planned.get(target_id, 0) + ships
         # 採用した手を ledger/timelines に反映 (後続惑星が最新状態で判断できる)

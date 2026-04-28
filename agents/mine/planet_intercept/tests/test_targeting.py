@@ -5,6 +5,7 @@ from src.targeting import (
     AHEAD_THRESHOLD,
     BEHIND_THRESHOLD,
     NEUTRAL_OWNER,
+    OPENING_TURNS,
     SNIPE_MIN_HOLD,
     TRAVEL_PENALTY,
     SwarmMission,
@@ -17,6 +18,7 @@ from src.targeting import (
     enumerate_intercept_candidates,
     enumerate_snipe_candidates,
     enumerate_swarm_candidates,
+    expand_priority_score,
     fleet_heading_to,
     select_move,
     ships_budget,
@@ -1091,3 +1093,78 @@ class TestEnumerateCandidatesP6:
         )
         # hold=0 なので P6 パスで continue
         assert all(c[0].id != 1 for c in cands)
+
+
+class TestExpandPriorityScore:
+    """P7: expand_priority_score のユニットテスト"""
+
+    def test_no_contention_returns_zero(self):
+        # 競合なし (opp_eta=None) -> 0.0
+        assert expand_priority_score(None, eta=10.0) == 0.0
+
+    def test_opp_reaches_first_excluded(self):
+        # opp_eta <= eta -> -inf (呼び出し側が除外する)
+        assert expand_priority_score(opp_eta=5.0, eta=10.0) == -math.inf
+
+    def test_opp_same_eta_excluded(self):
+        # opp_eta == eta -> -inf
+        assert expand_priority_score(opp_eta=10.0, eta=10.0) == -math.inf
+
+    def test_close_contention_higher_than_far(self):
+        # gap 小さいほど加点が大きい (先取り価値が高い)
+        close = expand_priority_score(opp_eta=11.0, eta=10.0)  # gap=1
+        far = expand_priority_score(opp_eta=30.0, eta=10.0)    # gap=20
+        assert close > far > 0.0
+
+
+class TestOpeningExpandFilter:
+    """P7: enumerate_candidates の is_opening フィルタ動作"""
+
+    def test_opp_reaches_first_excluded_from_candidates(self):
+        """opp_eta < my_eta の中立惑星は opening 中に除外される"""
+        mine = P(0, 0, 0, 0, ships=50)
+        target = P(1, NEUTRAL_OWNER, 20, 0, ships=3, prod=2)
+        # 敵フリートが target に近い位置から向かっている (opp_eta が my_eta より短い)
+        import math as _math
+        angle_toward = _math.atan2(target.y - 18.0, target.x - 18.0)
+        enemy_fleet = F(10, 1, 18.0, 0.0, angle_toward, from_id=99, ships=10)
+        planets = [mine, target]
+        fleets = [enemy_fleet]
+
+        cands_opening = enumerate_candidates(
+            mine, planets, fleets, player=0,
+            remaining_turns=500 - 5,  # elapsed=5 < OPENING_TURNS
+            is_opening=True,
+        )
+        cands_normal = enumerate_candidates(
+            mine, planets, fleets, player=0,
+            remaining_turns=500 - 5,
+            is_opening=False,
+        )
+        target_ids_opening = [c[0].id for c in cands_opening]
+        target_ids_normal = [c[0].id for c in cands_normal]
+        # opening では opp が先着なので除外、非 opening では除外しない
+        assert 1 not in target_ids_opening
+        assert 1 in target_ids_normal
+
+    def test_contention_higher_value_than_no_contention(self):
+        """競合ありの中立惑星は競合なしより value が高い (opening 中)"""
+        mine = P(0, 0, 0, 0, ships=50)
+        target_contested = P(1, NEUTRAL_OWNER, 20, 0, ships=3, prod=2)
+        target_free = P(2, NEUTRAL_OWNER, 20, 5, ships=3, prod=2)
+
+        # 敵フリートが target_contested には向かっているが target_free には向かっていない
+        import math as _math
+        angle_toward = _math.atan2(target_contested.y - 25.0, target_contested.x - 25.0)
+        enemy_fleet = F(10, 1, 25.0, 0.0, angle_toward, from_id=99, ships=5)
+        planets = [mine, target_contested, target_free]
+        fleets = [enemy_fleet]
+
+        cands = enumerate_candidates(
+            mine, planets, fleets, player=0,
+            remaining_turns=500 - 5,
+            is_opening=True,
+        )
+        by_id = {c[0].id: c[3] for c in cands}
+        if 1 in by_id and 2 in by_id:
+            assert by_id[1] > by_id[2], "競合中立の方が value が高いはず"
