@@ -221,6 +221,31 @@ def build_timelines(
     }
 
 
+def estimate_hold_turns(
+    timeline: list[PlanetState],
+    player: int,
+    my_eta: int,
+    horizon: int,
+) -> int:
+    """my_eta ターン後に player が占領した場合の保持ターン数を推定する。
+
+    my_eta 以降で「非敵 → 敵」へ所有者が遷移する最初のターンを失陥ターンとみなす。
+    my_eta より前から敵が継続占有している場合はその継続を新規到着と区別して無視する。
+    敵の新規到着がなければ horizon - my_eta を返す。
+    """
+    prev_owner: int = player
+    for s in timeline:
+        if s.turn <= my_eta:
+            prev_owner = s.owner
+            continue
+        is_enemy = s.owner not in (player, NEUTRAL_OWNER)
+        prev_is_enemy = prev_owner not in (player, NEUTRAL_OWNER)
+        if is_enemy and not prev_is_enemy:
+            return max(0, s.turn - my_eta)
+        prev_owner = s.owner
+    return max(0, horizon - my_eta)
+
+
 def estimate_snipe_outcome(
     target: Planet,
     timeline: list[PlanetState],

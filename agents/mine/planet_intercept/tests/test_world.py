@@ -1,8 +1,10 @@
 from src.utils import Fleet, Planet
 from src.world import (
     Arrival,
+    PlanetState,
     apply_planned_arrival,
     build_arrival_ledger,
+    estimate_hold_turns,
     estimate_snipe_outcome,
     first_turn_lost,
     resolve_battle,
@@ -252,3 +254,38 @@ class TestEstimateSnipeOutcome:
             target, timeline, player=0, my_eta=2, ships_after_capture=10, horizon=20
         )
         assert absorbed == 0
+
+
+class TestEstimateHoldTurns:
+    def test_no_enemy_holds_full_horizon(self):
+        timeline = [PlanetState(turn=t, owner=0, ships=5) for t in range(1, 81)]
+        assert estimate_hold_turns(timeline, player=0, my_eta=10, horizon=80) == 70
+
+    def test_enemy_arrives_at_turn_20(self):
+        timeline = (
+            [PlanetState(turn=t, owner=0, ships=5) for t in range(1, 20)]
+            + [PlanetState(turn=t, owner=1, ships=3) for t in range(20, 81)]
+        )
+        # turn 20 で敵占領, my_eta=10 -> hold = 20 - 10 = 10
+        assert estimate_hold_turns(timeline, player=0, my_eta=10, horizon=80) == 10
+
+    def test_enemy_before_my_eta_is_skipped(self):
+        # turn 5 で敵占領だが my_eta=15 -> turn 5 は my_eta 以前なのでスキップ
+        # -> hold = horizon - my_eta = 80 - 15 = 65
+        timeline = (
+            [PlanetState(turn=t, owner=0, ships=5) for t in range(1, 5)]
+            + [PlanetState(turn=t, owner=1, ships=3) for t in range(5, 81)]
+        )
+        assert estimate_hold_turns(timeline, player=0, my_eta=15, horizon=80) == 65
+
+    def test_my_eta_at_horizon_returns_zero(self):
+        timeline = [PlanetState(turn=t, owner=0, ships=5) for t in range(1, 81)]
+        assert estimate_hold_turns(timeline, player=0, my_eta=80, horizon=80) == 0
+
+    def test_neutral_owner_not_counted_as_loss(self):
+        # 中立 (owner=-1) は「失陥」とみなさない
+        timeline = (
+            [PlanetState(turn=t, owner=0, ships=5) for t in range(1, 30)]
+            + [PlanetState(turn=t, owner=-1, ships=0) for t in range(30, 81)]
+        )
+        assert estimate_hold_turns(timeline, player=0, my_eta=10, horizon=80) == 70
