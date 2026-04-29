@@ -1,0 +1,9 @@
+name: "Orbit Wars 600 — Notebook Agent"
+description: "Self-contained heuristic agent from orbit-wars-600.ipynb. Features: orbit intercept targeting (12-iter convergence), production ROI scoring, transit-adjusted garrison estimate, sun-path avoidance with angle rerouting, threat-based defence buffer, no double-targeting, endgame cutoff, comet discounting."
+author: "TakumiMukaiyama"
+kernel_slug: ~
+kernel_version: ~
+date_fetched: 2026-04-28
+license: "private"
+tags: [rule-based, orbit-intercept, roi-scoring, sun-avoidance, defence-buffer]
+disabled: false
