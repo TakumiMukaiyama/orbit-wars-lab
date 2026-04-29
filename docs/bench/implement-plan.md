@@ -824,3 +824,41 @@ P6 後 `60-30` から +7W (+7.7pp)。採用基準クリア。
 - 結果: `60-30` (66.7% WR)
 
 Group 3 の `33-57` から大幅改善 (+27W)。上位外部エージェントへの勝率も改善。
+
+---
+
+### 遊兵分析 + Partial Send 試行 (不採用・revert 済み, 2026-04-29)
+
+#### 背景
+
+P7 後の gauntlet (`runs/2026-04-28-007`) 解析で fleet utilization 率が mine ~53-66% vs 相手 ~70-84% と判明。遊兵の原因を `select_move` の発射ゲート (`avail >= ships_needed`) に仮定し、分析 + 試行を実施。
+
+#### 遊兵原因の実測 (30 敗合計)
+
+| 分類 | 割合 |
+|---|---|
+| `cant_afford` (val>0 だが single planet で払えない) | 98.9% |
+| `all_val_leq0` (全候補 value<=0) | 1.1% |
+
+遊兵の 98.9% は「撃ちたいターゲットはあるが 1 惑星で払えない」状態。value 計算の問題ではない。
+
+#### 試行内容
+
+`select_move` を `send = min(avail, ships_needed)` に変更し partial send を実装。
+
+#### 結果
+
+- 2P gauntlet: 約 **43% WR** (74.4% から -31pp)
+- revert 済み
+
+#### 失敗の根拠: sequential combat
+
+orbit-wars では複数フリートが同一惑星に「時間差」で到着すると各自が garrison と独立に戦闘する。
+例: garrison=71 の軌道惑星に 3 ships × 22 ターン送り続けても全て吸収される (合算されない)。
+partial send は ships_needed を満たさない小艦隊を垂れ流すだけになり、mine は t=39 まで 1 惑星固定。
+
+**確立した設計制約**:
+
+- `avail >= ships_needed` を満たして 1 撃で占領が基本 (変えない)
+- swarm は ETA 差 1-2 ターン以内の着弾が前提 (それ以外は先着 fleet が無駄になる)
+- 遊兵は「払えるようになるまで蓄積」が正しい挙動; これを解消するには蓄積速度の向上 (logistics) が必要
