@@ -2,13 +2,13 @@
 python = "3.13"
 
 [tasks.test]
-description = "ローカルテスト。引数例: --games 10 --vs random self --verbose"
-run = "uv run python scripts/test_local.py"
+description = "unit tests を実行する"
+run = "uv run pytest agents/mine/planet_intercept/tests -q"
 
 [tasks.submit]
 description = "src/ を tar.gz にまとめて Kaggle に提出する"
 run = """
-tar --exclude='**/.DS_Store' --exclude='**/__pycache__' --exclude='**/*.pyc' -czf submission.tar.gz main.py src/
+tar --exclude='**/.DS_Store' --exclude='**/__pycache__' --exclude='**/*.pyc' -czf submission.tar.gz -C agents/mine/planet_intercept main.py src/
 uv run kaggle competitions submit orbit-wars -f submission.tar.gz -m "${MSG:-submission}"
 """
 
@@ -31,3 +31,7 @@ run = "uv run kaggle competitions replay ${EPISODE_ID} -p ./replays"
 [tasks.logs]
 description = "エージェントのログを取得する (EPISODE_ID=<id>, AGENT=0 が必要)"
 run = "uv run kaggle competitions logs ${EPISODE_ID} ${AGENT:-0} -p ./logs"
+
+[tasks.gauntlet-2p]
+description = "2P gauntlet を実行する (seed=42, games-per-pair=10)"
+run = "uv run python -m orbit_wars_app.tournament gauntlet mine/planet_intercept --bucket baselines,external --format 2p --games-per-pair 10 --seed 42 --mode fast"
