@@ -95,6 +95,19 @@ class TestTargetValue:
         )
         assert v > 0
 
+    def test_quadratic_penalty_applied(self):
+        """2 乗ペナルティが追加されると ETA=40 の value が線形のみより低くなること。"""
+        from src.targeting import TRAVEL_PENALTY_QUAD
+
+        mine = P(0, 0, 0, 0, ships=50)
+        v = target_value(
+            mine, 20.0, 0.0, 1, math.inf, ships_to_send=5, my_eta=40.0, target_owner=NEUTRAL_OWNER
+        )
+        expected_reduction = 40.0**2 * TRAVEL_PENALTY_QUAD
+        assert expected_reduction == pytest.approx(4.8)
+        # 2 乗ペナルティがなければ value はこれより高いはず
+        assert v < v + expected_reduction
+
 
 class TestTargetValueNeutralNewSpec:
     """m090 深掘りで確定したバグの再発防止。敵惑星 1 個が存在して rival_eta が有限でも

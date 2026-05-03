@@ -31,6 +31,7 @@ HOLD_HORIZON = 20.0
 HOLD_HORIZON_BEHIND = 4.0
 THREAT_MARGIN = 0.0
 TRAVEL_PENALTY = 0.15
+TRAVEL_PENALTY_QUAD = 0.003
 ASSET_HORIZON = 120.0
 ORBITAL_OPENING_TURNS = 160
 INNER_ORBITAL_RADIUS = 34.0
@@ -303,7 +304,7 @@ def target_value(
     horizon = HOLD_HORIZON_BEHIND if mode == "behind" else asset_horizon
 
     threat = math.isfinite(rival_eta) and (rival_eta - my_eta) <= THREAT_MARGIN
-    eta_penalty = my_eta * TRAVEL_PENALTY
+    eta_penalty = my_eta * TRAVEL_PENALTY + my_eta**2 * TRAVEL_PENALTY_QUAD
     opening_bonus = 0.0
     elapsed_turns = 500 - remaining_turns if remaining_turns is not None else 500
     if is_orbital and orbital_radius is not None and elapsed_turns <= ORBITAL_OPENING_TURNS:
@@ -497,6 +498,7 @@ def enumerate_candidates(
                 + opening_contention_bonus
                 - ships_needed
                 - my_eta * TRAVEL_PENALTY
+                - my_eta**2 * TRAVEL_PENALTY_QUAD
             )
         else:
             value = (
