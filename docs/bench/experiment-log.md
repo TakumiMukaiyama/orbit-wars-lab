@@ -400,3 +400,54 @@ match 051 の観察:
 `git revert` で `select_move` を元の実装に戻した。テスト 171 passed 維持、74.4% WR 保持。
 今後の遊兵削減は「溜まった後の一括展開を早める」方向 (P8 Comet Intercept, P9 Map
 Characterization, または reinforcement によるロジスティクス) が候補。
+
+---
+
+## baseline 再計測メモ (2026-05-03)
+
+`runs/2026-04-28-002` の 67/90 (74.4%) は再現しないことを確認した。
+seed=42 + 現コードで同条件を 2 回走らせた結果:
+
+| run | WR | 備考 |
+|---|---|---|
+| 2026-05-03-002 | 52/90 (57.8%) | reinforce OFF (コメントアウト) |
+| 2026-05-03-003 | 58/90 (64.4%) | reinforce OFF (コメントアウト) |
+
+2 回の試行で 52〜58/90 のばらつきがある。**seed=42 固定でも対戦相手の内部乱数等で
+結果が変わる**ため、10 games/pair では ±6 程度の分散が生じる。
+
+`04-28-002` の 67/90 は上振れ (当時の実力水準より高い値)。現在の正確な baseline は
+**52〜58/90 (中央値 55/90 程度)** と見るのが妥当。
+
+### 対戦相手別 baseline (003 を代表値として採用)
+
+| 相手 | WR (003, reinforce OFF) |
+|---|---|
+| baselines/nearest-sniper | 10-0 |
+| baselines/random | 10-0 |
+| baselines/starter | 10-0 |
+| external/kashiwaba-rl | 10-0 |
+| external/pilkwang-structured | 4-6 |
+| external/sigmaborov-reinforce | 1-9 |
+| external/sigmaborov-starter | 10-0 |
+| external/tamrazov-starwars | 2-8 |
+| external/yuriygreben-architect | 1-9 |
+| **TOTAL** | **58/90 (64.4%)** |
+
+### reinforce ON (001) との比較
+
+| 相手 | reinforce OFF (003) | reinforce ON (001) | Δ |
+|---|---|---|---|
+| pilkwang-structured | 4-6 | 1-9 | -3 |
+| sigmaborov-reinforce | 1-9 | 2-8 | +1 |
+| sigmaborov-starter | 10-0 | 10-0 | = |
+| tamrazov-starwars | 2-8 | 0-10 | -2 |
+| yuriygreben-architect | 1-9 | 1-9 | = |
+| **TOTAL** | **58/90** | **54/90** | **-4** |
+
+reinforce ON で pilkwang -3、tamrazov -2 の劣化。効果が期待した相手 (pilkwang, yuriygreben)
+で改善が出ず、むしろ悪化している。
+
+**判定: 現時点では不採用 (コメントアウト状態を維持)**。
+10 games/pair の分散を踏まえると確定的とは言えないが、期待した +2 勝以上の改善シグナルが
+どの相手にも見られないため、reinforce のロジックを見直してから再計測する方針とする。
