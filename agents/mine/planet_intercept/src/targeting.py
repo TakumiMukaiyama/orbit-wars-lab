@@ -83,6 +83,80 @@ class SwarmMission:
     value: float
 
 
+@dataclass
+class ReinforceMission:
+    source_id: int
+    target_id: int
+    ships: int
+    angle: float
+    value: float
+    my_eta: int
+
+
+REINFORCE_PRODUCTION_LEVERAGE = 1.0
+
+
+def enumerate_reinforce_candidates(
+    my_planets: list,
+    target_candidates_by_planet: dict,
+    timelines: dict,
+    reserve_of,
+) -> list:
+    """R2+S3+Q2+M1 の reinforce 候補列挙。
+
+    target (R2): value>0 の通常候補を持つが avail < ships_needed な自惑星。
+    source (S3): value>0 の通常候補を持たない自惑星。
+    ships (Q2): min(source.avail, target.ships_needed - target.avail)。
+    """
+    targets = []
+    for p in my_planets:
+        cands = target_candidates_by_planet.get(p.id, [])
+        top = next((c for c in cands if c[3] > 0), None)
+        if top is None:
+            continue
+        ships_needed = top[1]
+        avail = p.ships - reserve_of(p)
+        if avail >= ships_needed:
+            continue
+        targets.append((p, ships_needed, avail))
+
+    target_ids = {p.id for p, _, _ in targets}
+
+    sources = []
+    for p in my_planets:
+        if p.id in target_ids:
+            continue
+        cands = target_candidates_by_planet.get(p.id, [])
+        if any(c[3] > 0 for c in cands):
+            continue
+        avail = p.ships - reserve_of(p)
+        if avail <= 0:
+            continue
+        sources.append((p, avail))
+
+    missions = []
+    for src, src_avail in sources:
+        for tgt, ships_needed, tgt_avail in targets:
+            need = ships_needed - tgt_avail
+            ships = min(src_avail, need)
+            if ships <= 0:
+                continue
+            my_eta_f = route_eta(src.x, src.y, tgt.x, tgt.y, ships)
+            angle, _ = route_angle_and_distance(src.x, src.y, tgt.x, tgt.y)
+            value = ships * REINFORCE_PRODUCTION_LEVERAGE - my_eta_f * TRAVEL_PENALTY
+            missions.append(
+                ReinforceMission(
+                    source_id=src.id,
+                    target_id=tgt.id,
+                    ships=ships,
+                    angle=angle,
+                    value=value,
+                    my_eta=max(1, int(math.ceil(my_eta_f))),
+                )
+            )
+    return missions
+
+
 def _fleet_forward_distance(fleet, planet) -> float:
     dx = planet.x - fleet.x
     dy = planet.y - fleet.y

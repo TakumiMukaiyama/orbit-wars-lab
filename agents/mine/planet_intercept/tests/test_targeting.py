@@ -1168,3 +1168,129 @@ class TestOpeningExpandFilter:
         by_id = {c[0].id: c[3] for c in cands}
         if 1 in by_id and 2 in by_id:
             assert by_id[1] > by_id[2], "競合中立の方が value が高いはず"
+
+
+class TestEnumerateReinforceCandidates:
+    """enumerate_reinforce_candidates の R2+S3+Q2+M1 挙動を検証。"""
+
+    def _make_cand(self, target, ships_needed, value=5.0, my_eta=5.0):
+        import math as _math
+        return (target, ships_needed, 0.0, value, float(my_eta))
+
+    def test_reinforce_source_excluded_when_has_value_candidate(self):
+        """source 側が value>0 の通常候補を持つとき reinforce source にならない。"""
+        from src.targeting import enumerate_reinforce_candidates
+
+        source = P(0, 0, 0, 0, ships=50)
+        target = P(1, 0, 20, 0, ships=5)
+        enemy = P(2, 1, 40, 0, ships=10)
+        my_planets = [source, target]
+
+        # source は enemy へ value>0 の候補を持つ
+        cands_by_planet = {
+            source.id: [self._make_cand(enemy, ships_needed=15, value=8.0)],
+            target.id: [self._make_cand(enemy, ships_needed=20, value=6.0)],
+        }
+        # target は cant_afford: avail = 5 - 0 = 5 < 20
+        reserve_of = lambda p: 0
+        missions = enumerate_reinforce_candidates(
+            my_planets=my_planets,
+            target_candidates_by_planet=cands_by_planet,
+            timelines={},
+            reserve_of=reserve_of,
+        )
+        assert all(m.source_id != source.id for m in missions)
+
+    def test_reinforce_target_only_when_cant_afford(self):
+        """target の avail >= ships_needed のとき reinforce target にならない。"""
+        from src.targeting import enumerate_reinforce_candidates
+
+        source = P(0, 0, 0, 0, ships=50)   # value>0 候補なし -> S3 該当
+        target = P(1, 0, 20, 0, ships=30)
+        enemy = P(2, 1, 40, 0, ships=10)
+        my_planets = [source, target]
+
+        # target は avail=30 >= ships_needed=20 -> fully funded
+        cands_by_planet = {
+            source.id: [],
+            target.id: [self._make_cand(enemy, ships_needed=20, value=6.0)],
+        }
+        reserve_of = lambda p: 0
+        missions = enumerate_reinforce_candidates(
+            my_planets=my_planets,
+            target_candidates_by_planet=cands_by_planet,
+            timelines={},
+            reserve_of=reserve_of,
+        )
+        assert all(m.target_id != target.id for m in missions)
+
+    def test_reinforce_ships_matches_target_need(self):
+        """ships = min(source.avail, target.ships_needed - target.avail) を満たす。"""
+        from src.targeting import enumerate_reinforce_candidates
+
+        # source: avail=40, target: ships_needed=25, target.avail=5 -> need=20
+        # min(40, 20) = 20
+        source = P(0, 0, 0, 0, ships=40)
+        target = P(1, 0, 20, 0, ships=5)
+        enemy = P(2, 1, 40, 0, ships=10)
+        my_planets = [source, target]
+
+        cands_by_planet = {
+            source.id: [],
+            target.id: [self._make_cand(enemy, ships_needed=25, value=6.0)],
+        }
+        reserve_of = lambda p: 0
+        missions = enumerate_reinforce_candidates(
+            my_planets=my_planets,
+            target_candidates_by_planet=cands_by_planet,
+            timelines={},
+            reserve_of=reserve_of,
+        )
+        assert len(missions) == 1
+        assert missions[0].ships == 20
+
+    def test_reinforce_ships_zero_when_target_fully_funded(self):
+        """target.avail >= ships_needed なら ships <= 0 で候補化されない。"""
+        from src.targeting import enumerate_reinforce_candidates
+
+        source = P(0, 0, 0, 0, ships=50)
+        target = P(1, 0, 20, 0, ships=50)   # avail=50 >= ships_needed=10
+        enemy = P(2, 1, 40, 0, ships=10)
+        my_planets = [source, target]
+
+        cands_by_planet = {
+            source.id: [],
+            target.id: [self._make_cand(enemy, ships_needed=10, value=6.0)],
+        }
+        reserve_of = lambda p: 0
+        missions = enumerate_reinforce_candidates(
+            my_planets=my_planets,
+            target_candidates_by_planet=cands_by_planet,
+            timelines={},
+            reserve_of=reserve_of,
+        )
+        assert all(m.ships > 0 for m in missions)
+        assert all(m.target_id != target.id for m in missions)
+
+    def test_reinforce_target_excluded_when_top_candidate_value_nonpositive(self):
+        """target の最上位候補が value<=0 のとき候補化されない。"""
+        from src.targeting import enumerate_reinforce_candidates
+
+        source = P(0, 0, 0, 0, ships=50)
+        target = P(1, 0, 20, 0, ships=5)
+        enemy = P(2, 1, 40, 0, ships=10)
+        my_planets = [source, target]
+
+        # top candidate の value = 0.0 -> 候補なし扱い
+        cands_by_planet = {
+            source.id: [],
+            target.id: [self._make_cand(enemy, ships_needed=20, value=0.0)],
+        }
+        reserve_of = lambda p: 0
+        missions = enumerate_reinforce_candidates(
+            my_planets=my_planets,
+            target_candidates_by_planet=cands_by_planet,
+            timelines={},
+            reserve_of=reserve_of,
+        )
+        assert all(m.target_id != target.id for m in missions)
