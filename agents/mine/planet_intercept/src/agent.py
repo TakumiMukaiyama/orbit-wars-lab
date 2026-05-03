@@ -14,6 +14,7 @@ from .targeting import (
     compute_domination,
     enumerate_candidates,
     enumerate_intercept_candidates,
+    enumerate_reinforce_candidates,
     enumerate_snipe_candidates,
     enumerate_support_candidates,
     select_move,
@@ -82,6 +83,9 @@ def agent(obs):
     intercepted_ids: set[int] = set()
     # P7: opening phase での expand 発射数カウント
     expand_fired_this_turn: int = 0
+    # reinforce パス用: 通常パスで発射した source と、各惑星の attack 候補
+    fired_sources: set[int] = set()
+    attack_cands_by_planet: dict[int, list] = {}
 
     moves = []
     for mine in my_planets:
@@ -116,6 +120,7 @@ def agent(obs):
             domination=dom,
             is_opening=is_opening,
         )
+        attack_cands_by_planet[mine.id] = attack_cands
         intercept_cands = enumerate_intercept_candidates(
             mine,
             planets,
@@ -172,7 +177,11 @@ def agent(obs):
 
         # P7: opening expand 上限チェック (中立惑星への攻撃を max_expand_per_turn で制限)
         target_planet_obj = next((p for p in planets if p.id == target_id), None)
-        if is_opening and target_planet_obj is not None and target_planet_obj.owner == NEUTRAL_OWNER:
+        if (
+            is_opening
+            and target_planet_obj is not None
+            and target_planet_obj.owner == NEUTRAL_OWNER
+        ):
             if expand_fired_this_turn >= MAX_EXPAND_PER_TURN:
                 continue
             expand_fired_this_turn += 1
@@ -202,6 +211,33 @@ def agent(obs):
                     player,
                     timeline=timelines.get(target_id),
                 )
+        fired_sources.add(mine.id)
         moves.append([mine.id, angle, ships])
+
+    # reinforce 独立パス (M1): 通常パス後に実行
+    reinforce_missions = enumerate_reinforce_candidates(
+        my_planets=my_planets,
+        target_candidates_by_planet=attack_cands_by_planet,
+        timelines=timelines,
+        reserve_of=lambda p: defense_status[p.id][1],
+    )
+    reinforce_fired_sources: set[int] = set()
+    for r in sorted(reinforce_missions, key=lambda m: -m.value):
+        if r.source_id in fired_sources:
+            continue
+        if r.source_id in reinforce_fired_sources:
+            continue
+        moves.append([r.source_id, r.angle, r.ships])
+        apply_planned_arrival(
+            ledger,
+            timelines,
+            planets,
+            target_id=r.target_id,
+            owner=player,
+            ships=r.ships,
+            eta=r.my_eta,
+            horizon=horizon,
+        )
+        reinforce_fired_sources.add(r.source_id)
 
     return moves

@@ -64,8 +64,8 @@ SNIPE_HOLD_PENALTY = 30.0  # 短命 snipe に対するペナルティ
 ETA_SYNC_TOLERANCE = 8  # max ETA difference (turns) between swarm sources (P3 緩和: 3→8)
 
 # P7: Opening Expand 改善
-OPENING_TURNS = 40           # opening phase の長さ (ターン数)
-MAX_EXPAND_PER_TURN = 2      # 1 ターンあたり expand 発射上限
+OPENING_TURNS = 40  # opening phase の長さ (ターン数)
+MAX_EXPAND_PER_TURN = 2  # 1 ターンあたり expand 発射上限
 CONTENTION_BONUS_MAX = 60.0  # opp_eta が eta に近づくほど加算される最大ボーナス
 
 
@@ -474,19 +474,19 @@ def enumerate_candidates(
         # P6: timeline ベースの hold_turns 価値計算 (静止惑星のみ)
         if timelines and t.id in timelines and not is_orbital:
             _horizon = max(1, min(80, remaining_turns)) if remaining_turns is not None else 80
-            hold = estimate_hold_turns(
-                timelines[t.id], player, int(math.ceil(my_eta)), _horizon
-            )
+            hold = estimate_hold_turns(timelines[t.id], player, int(math.ceil(my_eta)), _horizon)
             if hold <= 0:
                 continue
             factor = (
-                _overextend_factor(my_planet_count, domination)
-                if t.owner == NEUTRAL_OWNER
-                else 1.0
+                _overextend_factor(my_planet_count, domination) if t.owner == NEUTRAL_OWNER else 1.0
             )
             _opening_bonus = STATIC_HIGH_PROD_BONUS if t.production >= 4 else 0.0
             _central_bonus = 0.0
-            if t.owner == NEUTRAL_OWNER and elapsed_turns <= CENTRAL_OPENING_TURNS and r < CENTRAL_REF_RADIUS:
+            if (
+                t.owner == NEUTRAL_OWNER
+                and elapsed_turns <= CENTRAL_OPENING_TURNS
+                and r < CENTRAL_REF_RADIUS
+            ):
                 _central_bonus = CENTRAL_BONUS_MAX * (1.0 - r / CENTRAL_REF_RADIUS)
             _focus_bonus = FOCUS_BONUS_PER_PLANNED_SHIP * max(0, int(focus_planned))
             value = (
@@ -499,23 +499,26 @@ def enumerate_candidates(
                 - my_eta * TRAVEL_PENALTY
             )
         else:
-            value = target_value(
-                my_planet,
-                ix,
-                iy,
-                t.production,
-                rival_eta,
-                ships_needed,
-                my_eta,
-                target_owner=t.owner,
-                mode=mode,
-                remaining_turns=remaining_turns,
-                is_orbital=is_orbital,
-                orbital_radius=r,
-                my_planet_count=my_planet_count,
-                domination=domination,
-                focus_planned_ships=focus_planned,
-            ) + opening_contention_bonus
+            value = (
+                target_value(
+                    my_planet,
+                    ix,
+                    iy,
+                    t.production,
+                    rival_eta,
+                    ships_needed,
+                    my_eta,
+                    target_owner=t.owner,
+                    mode=mode,
+                    remaining_turns=remaining_turns,
+                    is_orbital=is_orbital,
+                    orbital_radius=r,
+                    my_planet_count=my_planet_count,
+                    domination=domination,
+                    focus_planned_ships=focus_planned,
+                )
+                + opening_contention_bonus
+            )
         out.append((t, ships_needed, angle, value, float(my_eta)))
     return out
 

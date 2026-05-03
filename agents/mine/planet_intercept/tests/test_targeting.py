@@ -5,7 +5,6 @@ from src.targeting import (
     AHEAD_THRESHOLD,
     BEHIND_THRESHOLD,
     NEUTRAL_OWNER,
-    OPENING_TURNS,
     SNIPE_MIN_HOLD,
     TRAVEL_PENALTY,
     SwarmMission,
@@ -1020,13 +1019,16 @@ class TestEnumerateCandidatesP6:
         planets = [mine, target]
         # timeline: my_eta≈10 到着後は自軍所有で敵が来ない
         long_hold = [
-            PlanetState(turn=t, owner=(-1 if t < 11 else 0), ships=3)
-            for t in range(1, 81)
+            PlanetState(turn=t, owner=(-1 if t < 11 else 0), ships=3) for t in range(1, 81)
         ]
 
         cands = enumerate_candidates(
-            mine, planets, fleets=[], player=0,
-            timelines={1: long_hold}, remaining_turns=500,
+            mine,
+            planets,
+            fleets=[],
+            player=0,
+            timelines={1: long_hold},
+            remaining_turns=500,
         )
         assert any(c[0].id == 1 and c[3] > 0 for c in cands)
 
@@ -1045,17 +1047,24 @@ class TestEnumerateCandidatesP6:
         ]
         # 敵が来ない -> hold=70
         long_hold = [
-            PlanetState(turn=t, owner=(-1 if t < 11 else 0), ships=3)
-            for t in range(1, 81)
+            PlanetState(turn=t, owner=(-1 if t < 11 else 0), ships=3) for t in range(1, 81)
         ]
 
         cands_short = enumerate_candidates(
-            mine, planets, fleets=[], player=0,
-            timelines={1: short_hold}, remaining_turns=500,
+            mine,
+            planets,
+            fleets=[],
+            player=0,
+            timelines={1: short_hold},
+            remaining_turns=500,
         )
         cands_long = enumerate_candidates(
-            mine, planets, fleets=[], player=0,
-            timelines={1: long_hold}, remaining_turns=500,
+            mine,
+            planets,
+            fleets=[],
+            player=0,
+            timelines={1: long_hold},
+            remaining_turns=500,
         )
         val_short = next((c[3] for c in cands_short if c[0].id == 1), None)
         val_long = next((c[3] for c in cands_long if c[0].id == 1), None)
@@ -1069,8 +1078,9 @@ class TestEnumerateCandidatesP6:
     def test_hold_zero_excluded_from_candidates(self):
         """hold_turns=0 の惑星は候補から除外される (horizon == my_eta のケース)"""
         import math
-        from src.world import PlanetState, estimate_hold_turns
+
         from src.geometry import route_eta
+        from src.world import PlanetState, estimate_hold_turns
 
         mine = P(0, 0, 0, 0, ships=50)
         # distance=80 -> my_eta が大きい
@@ -1080,16 +1090,19 @@ class TestEnumerateCandidatesP6:
         my_eta = route_eta(mine.x, mine.y, target.x, target.y, 2)
         horizon = int(math.ceil(my_eta))
         timeline = [
-            PlanetState(turn=t, owner=(-1 if t <= horizon else 0), ships=3)
-            for t in range(1, 81)
+            PlanetState(turn=t, owner=(-1 if t <= horizon else 0), ships=3) for t in range(1, 81)
         ]
         # hold = horizon - ceil(my_eta) = 0
         hold = estimate_hold_turns(timeline, player=0, my_eta=horizon, horizon=horizon)
         assert hold == 0  # 前提確認
 
         cands = enumerate_candidates(
-            mine, planets, fleets=[], player=0,
-            timelines={1: timeline}, remaining_turns=horizon,
+            mine,
+            planets,
+            fleets=[],
+            player=0,
+            timelines={1: timeline},
+            remaining_turns=horizon,
         )
         # hold=0 なので P6 パスで continue
         assert all(c[0].id != 1 for c in cands)
@@ -1113,7 +1126,7 @@ class TestExpandPriorityScore:
     def test_close_contention_higher_than_far(self):
         # gap 小さいほど加点が大きい (先取り価値が高い)
         close = expand_priority_score(opp_eta=11.0, eta=10.0)  # gap=1
-        far = expand_priority_score(opp_eta=30.0, eta=10.0)    # gap=20
+        far = expand_priority_score(opp_eta=30.0, eta=10.0)  # gap=20
         assert close > far > 0.0
 
 
@@ -1126,18 +1139,25 @@ class TestOpeningExpandFilter:
         target = P(1, NEUTRAL_OWNER, 20, 0, ships=3, prod=2)
         # 敵フリートが target に近い位置から向かっている (opp_eta が my_eta より短い)
         import math as _math
+
         angle_toward = _math.atan2(target.y - 18.0, target.x - 18.0)
         enemy_fleet = F(10, 1, 18.0, 0.0, angle_toward, from_id=99, ships=10)
         planets = [mine, target]
         fleets = [enemy_fleet]
 
         cands_opening = enumerate_candidates(
-            mine, planets, fleets, player=0,
+            mine,
+            planets,
+            fleets,
+            player=0,
             remaining_turns=500 - 5,  # elapsed=5 < OPENING_TURNS
             is_opening=True,
         )
         cands_normal = enumerate_candidates(
-            mine, planets, fleets, player=0,
+            mine,
+            planets,
+            fleets,
+            player=0,
             remaining_turns=500 - 5,
             is_opening=False,
         )
@@ -1155,13 +1175,17 @@ class TestOpeningExpandFilter:
 
         # 敵フリートが target_contested には向かっているが target_free には向かっていない
         import math as _math
+
         angle_toward = _math.atan2(target_contested.y - 25.0, target_contested.x - 25.0)
         enemy_fleet = F(10, 1, 25.0, 0.0, angle_toward, from_id=99, ships=5)
         planets = [mine, target_contested, target_free]
         fleets = [enemy_fleet]
 
         cands = enumerate_candidates(
-            mine, planets, fleets, player=0,
+            mine,
+            planets,
+            fleets,
+            player=0,
             remaining_turns=500 - 5,
             is_opening=True,
         )
@@ -1170,11 +1194,14 @@ class TestOpeningExpandFilter:
             assert by_id[1] > by_id[2], "競合中立の方が value が高いはず"
 
 
+def _zero_reserve(p):
+    return 0
+
+
 class TestEnumerateReinforceCandidates:
     """enumerate_reinforce_candidates の R2+S3+Q2+M1 挙動を検証。"""
 
     def _make_cand(self, target, ships_needed, value=5.0, my_eta=5.0):
-        import math as _math
         return (target, ships_needed, 0.0, value, float(my_eta))
 
     def test_reinforce_source_excluded_when_has_value_candidate(self):
@@ -1192,7 +1219,7 @@ class TestEnumerateReinforceCandidates:
             target.id: [self._make_cand(enemy, ships_needed=20, value=6.0)],
         }
         # target は cant_afford: avail = 5 - 0 = 5 < 20
-        reserve_of = lambda p: 0
+        reserve_of = _zero_reserve
         missions = enumerate_reinforce_candidates(
             my_planets=my_planets,
             target_candidates_by_planet=cands_by_planet,
@@ -1205,7 +1232,7 @@ class TestEnumerateReinforceCandidates:
         """target の avail >= ships_needed のとき reinforce target にならない。"""
         from src.targeting import enumerate_reinforce_candidates
 
-        source = P(0, 0, 0, 0, ships=50)   # value>0 候補なし -> S3 該当
+        source = P(0, 0, 0, 0, ships=50)  # value>0 候補なし -> S3 該当
         target = P(1, 0, 20, 0, ships=30)
         enemy = P(2, 1, 40, 0, ships=10)
         my_planets = [source, target]
@@ -1215,7 +1242,7 @@ class TestEnumerateReinforceCandidates:
             source.id: [],
             target.id: [self._make_cand(enemy, ships_needed=20, value=6.0)],
         }
-        reserve_of = lambda p: 0
+        reserve_of = _zero_reserve
         missions = enumerate_reinforce_candidates(
             my_planets=my_planets,
             target_candidates_by_planet=cands_by_planet,
@@ -1239,7 +1266,7 @@ class TestEnumerateReinforceCandidates:
             source.id: [],
             target.id: [self._make_cand(enemy, ships_needed=25, value=6.0)],
         }
-        reserve_of = lambda p: 0
+        reserve_of = _zero_reserve
         missions = enumerate_reinforce_candidates(
             my_planets=my_planets,
             target_candidates_by_planet=cands_by_planet,
@@ -1254,7 +1281,7 @@ class TestEnumerateReinforceCandidates:
         from src.targeting import enumerate_reinforce_candidates
 
         source = P(0, 0, 0, 0, ships=50)
-        target = P(1, 0, 20, 0, ships=50)   # avail=50 >= ships_needed=10
+        target = P(1, 0, 20, 0, ships=50)  # avail=50 >= ships_needed=10
         enemy = P(2, 1, 40, 0, ships=10)
         my_planets = [source, target]
 
@@ -1262,7 +1289,7 @@ class TestEnumerateReinforceCandidates:
             source.id: [],
             target.id: [self._make_cand(enemy, ships_needed=10, value=6.0)],
         }
-        reserve_of = lambda p: 0
+        reserve_of = _zero_reserve
         missions = enumerate_reinforce_candidates(
             my_planets=my_planets,
             target_candidates_by_planet=cands_by_planet,
@@ -1286,7 +1313,7 @@ class TestEnumerateReinforceCandidates:
             source.id: [],
             target.id: [self._make_cand(enemy, ships_needed=20, value=0.0)],
         }
-        reserve_of = lambda p: 0
+        reserve_of = _zero_reserve
         missions = enumerate_reinforce_candidates(
             my_planets=my_planets,
             target_candidates_by_planet=cands_by_planet,
