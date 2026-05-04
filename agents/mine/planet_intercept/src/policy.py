@@ -34,9 +34,10 @@ def _pick_dump_target(
     player: int,
 ) -> tuple[float, int] | None:
     """容量ダンプ先を選ぶ。(angle, ships) を返す。なければ None。"""
-    # 1. value最大の attack 候補 (value > 0 優先、なければ最大でも使う)
-    if attack_cands:
-        best = max(attack_cands, key=lambda c: c[3])
+    # 1. value > 0 の attack 候補のうち value 最大のものを選ぶ
+    positive_cands = [c for c in attack_cands if c[3] > 0]
+    if positive_cands:
+        best = max(positive_cands, key=lambda c: c[3])
         angle = best[2]
         return angle, best[1]
 
@@ -51,7 +52,6 @@ def _pick_dump_target(
         return angle, mine.ships
 
     # 3. 最も近い敵惑星に直接発射
-    enemy_planets = [p for p in all_planets if p.owner not in (player, NEUTRAL_OWNER)]
     if enemy_planets:
         nearest = min(enemy_planets, key=lambda p: math.hypot(p.x - mine.x, p.y - mine.y))
         angle = math.atan2(nearest.y - mine.y, nearest.x - mine.x)
@@ -119,10 +119,9 @@ class HeuristicPolicy(Policy):
                 if dump_result is not None:
                     dump_angle, _ = dump_result
                     dump_ships = max(1, mine.ships - reserve)
-                    if dump_ships > 0:
-                        moves.append([mine.id, dump_angle, dump_ships])
-                        fired_sources.add(mine.id)
-                        continue
+                    moves.append([mine.id, dump_angle, dump_ships])
+                    fired_sources.add(mine.id)
+                    continue
 
             if status == "doomed" and n > 1:
                 safe_allies = [
