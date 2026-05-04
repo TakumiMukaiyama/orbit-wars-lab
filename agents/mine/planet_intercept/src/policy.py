@@ -17,6 +17,7 @@ from .targeting import (
     classify_defense,
     enumerate_candidates,
     enumerate_intercept_candidates,
+    enumerate_rear_push_candidates,
     enumerate_reinforce_candidates,
     enumerate_snipe_candidates,
     enumerate_support_candidates,
@@ -261,8 +262,18 @@ class HeuristicPolicy(Policy):
             timelines=gs.timelines,
             reserve_of=lambda p: gs.defense_status[p.id][1],
         )
+        rear_push_missions = list(enumerate_rear_push_candidates(
+            my_planets=gs.my_planets,
+            all_planets=gs.planets,
+            player=gs.player,
+            attack_cands_by_planet=attack_cands_by_planet,
+            reserve_of=lambda p: gs.defense_status[p.id][1],
+        ))
+        reinforce_missions = sorted(
+            reinforce_missions + rear_push_missions, key=lambda m: -m.value
+        )
         reinforce_fired_sources: set[int] = set()
-        for r in sorted(reinforce_missions, key=lambda m: -m.value):
+        for r in reinforce_missions:
             if r.source_id in fired_sources:
                 continue
             if r.source_id in reinforce_fired_sources:

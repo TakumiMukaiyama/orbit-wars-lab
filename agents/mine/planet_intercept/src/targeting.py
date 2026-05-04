@@ -59,6 +59,11 @@ HIGH_PROD_RESERVE = 4  # 別枠で追加する最大数
 BEHIND_THRESHOLD = -0.3
 AHEAD_THRESHOLD = 0.3
 
+REAR_DISTANCE_THRESHOLD = 40.0
+REAR_MIN_SURPLUS = 20
+REAR_PUSH_FRACTION = 0.5
+FRONTIER_MIN_CANDS = 2
+
 SNIPE_MIN_HOLD = 5  # hold_turns がこれ未満のとき SNIPE_HOLD_PENALTY を加算
 SNIPE_HOLD_PENALTY = 30.0  # 短命 snipe に対するペナルティ
 
@@ -164,6 +169,60 @@ def enumerate_reinforce_candidates(
                 )
             )
     return missions
+
+
+def enumerate_rear_push_candidates(
+    my_planets: list,
+    all_planets: list,
+    player: int,
+    attack_cands_by_planet: dict,
+    reserve_of,
+):
+    """後方の安全自惑星から前線自惑星へ艦を流す候補を列挙する。
+
+    source: 全敵惑星への最短距離 > REAR_DISTANCE_THRESHOLD かつ avail >= REAR_MIN_SURPLUS
+    target: attack候補が FRONTIER_MIN_CANDS 件以上あり、source より敵に近い自惑星
+    """
+    enemy_planets = [p for p in all_planets if p.owner not in (player, NEUTRAL_OWNER)]
+    if not enemy_planets:
+        return
+
+    def min_enemy_dist(p):
+        return min(math.hypot(p.x - e.x, p.y - e.y) for e in enemy_planets)
+
+    for src in my_planets:
+        src_enemy_dist = min_enemy_dist(src)
+        if src_enemy_dist <= REAR_DISTANCE_THRESHOLD:
+            continue
+        avail = src.ships - reserve_of(src)
+        if avail < REAR_MIN_SURPLUS:
+            continue
+
+        for tgt in my_planets:
+            if tgt.id == src.id:
+                continue
+            cands = attack_cands_by_planet.get(tgt.id, [])
+            good_cands = [c for c in cands if c[3] > 0]
+            if len(good_cands) < FRONTIER_MIN_CANDS:
+                continue
+            if min_enemy_dist(tgt) >= src_enemy_dist:
+                continue  # src より敵に近くない
+
+            ships = min(avail, max(1, int(src.ships * REAR_PUSH_FRACTION)))
+            my_eta_f = route_eta(src.x, src.y, tgt.x, tgt.y, ships)
+            angle, _ = route_angle_and_distance(src.x, src.y, tgt.x, tgt.y)
+            top_value = good_cands[0][3]
+            value = top_value - my_eta_f * TRAVEL_PENALTY
+            if value <= 0:
+                continue
+            yield ReinforceMission(
+                source_id=src.id,
+                target_id=tgt.id,
+                ships=ships,
+                angle=angle,
+                value=value,
+                my_eta=max(1, int(math.ceil(my_eta_f))),
+            )
 
 
 def _fleet_forward_distance(fleet, planet) -> float:

@@ -1351,3 +1351,66 @@ class TestEnumerateReinforceCandidates:
             reserve_of=reserve_of,
         )
         assert all(m.target_id != target.id for m in missions)
+
+
+from src.targeting import (
+    REAR_DISTANCE_THRESHOLD,
+    REAR_MIN_SURPLUS,
+    enumerate_rear_push_candidates,
+)
+
+
+class TestRearPush:
+    def _make_state(self):
+        # 後方自惑星 (敵から遠い) + 前線自惑星 (敵に近い) + 敵惑星
+        rear = P(0, 0, 10.0, 50.0, ships=60, prod=2)   # 後方
+        front = P(1, 0, 60.0, 50.0, ships=5, prod=2)   # 前線
+        enemy = P(2, 1, 80.0, 50.0, ships=30, prod=2)  # 敵
+        return rear, front, enemy
+
+    def test_rear_pushes_to_frontier(self):
+        rear, front, enemy = self._make_state()
+        all_planets = [rear, front, enemy]
+        attack_cands = {
+            front.id: [(enemy, 31, 0.0, 50.0, 10.0), (enemy, 31, 0.0, 40.0, 10.0)],
+        }
+        missions = list(enumerate_rear_push_candidates(
+            my_planets=[rear, front],
+            all_planets=all_planets,
+            player=0,
+            attack_cands_by_planet=attack_cands,
+            reserve_of=lambda p: 0,
+        ))
+        assert any(m.source_id == rear.id and m.target_id == front.id for m in missions)
+
+    def test_no_push_when_close_to_enemy(self):
+        near = P(0, 0, 65.0, 50.0, ships=60, prod=2)
+        front = P(1, 0, 60.0, 50.0, ships=5, prod=2)
+        enemy = P(2, 1, 80.0, 50.0, ships=30, prod=2)
+        attack_cands = {
+            front.id: [(enemy, 31, 0.0, 50.0, 10.0), (enemy, 31, 0.0, 40.0, 10.0)],
+        }
+        missions = list(enumerate_rear_push_candidates(
+            my_planets=[near, front],
+            all_planets=[near, front, enemy],
+            player=0,
+            attack_cands_by_planet=attack_cands,
+            reserve_of=lambda p: 0,
+        ))
+        assert not any(m.source_id == near.id for m in missions)
+
+    def test_no_push_when_insufficient_surplus(self):
+        rear = P(0, 0, 10.0, 50.0, ships=5, prod=2)  # ships 不足
+        front = P(1, 0, 60.0, 50.0, ships=5, prod=2)
+        enemy = P(2, 1, 80.0, 50.0, ships=30, prod=2)
+        attack_cands = {
+            front.id: [(enemy, 31, 0.0, 50.0, 10.0), (enemy, 31, 0.0, 40.0, 10.0)],
+        }
+        missions = list(enumerate_rear_push_candidates(
+            my_planets=[rear, front],
+            all_planets=[rear, front, enemy],
+            player=0,
+            attack_cands_by_planet=attack_cands,
+            reserve_of=lambda p: 0,
+        ))
+        assert len(missions) == 0
