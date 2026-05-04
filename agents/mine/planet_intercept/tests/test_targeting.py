@@ -1414,3 +1414,42 @@ class TestRearPush:
             reserve_of=lambda p: 0,
         ))
         assert len(missions) == 0
+
+
+from src.targeting import JIT_MARGIN, enumerate_support_candidates
+from src.world import build_timelines
+
+
+class TestJITDispatch:
+    def test_skips_dispatch_when_too_early(self):
+        """出発不要なターンには援軍候補を返さない"""
+        # y=70 で太陽を回避。eta=25, ships=70 => fall_turn=25, dispatch_turn=10
+        src = P(0, 0, 10.0, 70.0, ships=50, prod=2)
+        defended = P(1, 0, 50.0, 70.0, ships=5, prod=2)
+        arrivals = [Arrival(eta=25, owner=1, ships=70)]
+        timeline = simulate_planet_timeline(defended, arrivals, horizon=80)
+        timelines = {defended.id: timeline}
+
+        cands = enumerate_support_candidates(
+            src, [src, defended], 0,
+            timelines=timelines, planned={}, remaining_turns=400,
+            current_turn=5,
+        )
+        assert len(cands) == 0
+
+    def test_dispatches_when_time_is_right(self):
+        """出発すべきターンには援軍候補を返す"""
+        # y=70 で太陽を回避。eta=25, ships=70 => fall_turn=25, dispatch_turn=10
+        src = P(0, 0, 10.0, 70.0, ships=50, prod=2)
+        defended = P(1, 0, 50.0, 70.0, ships=5, prod=2)
+        arrivals = [Arrival(eta=25, owner=1, ships=70)]
+        timeline = simulate_planet_timeline(defended, arrivals, horizon=80)
+        timelines = {defended.id: timeline}
+
+        cands = enumerate_support_candidates(
+            src, [src, defended], 0,
+            timelines=timelines, planned={}, remaining_turns=400,
+            current_turn=12,
+        )
+        assert len(cands) >= 1
+        assert cands[0][0].id == defended.id

@@ -159,6 +159,7 @@ class HeuristicPolicy(Policy):
                 timelines=gs.timelines,
                 planned=planned,
                 remaining_turns=gs.remaining_turns,
+                current_turn=gs.step,
             )
             support_cands = [c for c in support_cands if c[0].id not in intercepted_ids]
             if gs.mode == "behind":
