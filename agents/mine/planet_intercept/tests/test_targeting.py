@@ -1503,6 +1503,49 @@ class TestPostLaunchSnipe:
         assert len(cands) == 0
 
 
+from src.targeting import CONCURRENT_BONUS, CONCURRENT_WINDOW
+
+
+class TestConcurrentExpansion:
+    def test_bonus_added_when_eta_matches(self):
+        """既発射フリートと ETA が近い候補にボーナスが加算される"""
+        mine = P(0, 0, 10.0, 50.0, ships=50, prod=2)
+        near = P(1, -1, 30.0, 50.0, ships=5, prod=2)   # ETA ≒ 12
+        far  = P(2, -1, 90.0, 50.0, ships=5, prod=2)   # ETA ≒ 50
+
+        cands_no_concurrent = enumerate_candidates(
+            mine, [mine, near, far], [], 0,
+            remaining_turns=400, concurrent_etas=None,
+        )
+        cands_with_concurrent = enumerate_candidates(
+            mine, [mine, near, far], [], 0,
+            remaining_turns=400, concurrent_etas={12},  # near の ETA に合わせる
+        )
+
+        val_no  = next(v for t, _, _, v, _ in cands_no_concurrent if t.id == near.id)
+        val_yes = next(v for t, _, _, v, _ in cands_with_concurrent if t.id == near.id)
+        assert val_yes > val_no
+        assert val_yes - val_no == pytest.approx(CONCURRENT_BONUS, abs=1.0)
+
+    def test_no_bonus_when_eta_far(self):
+        """ETA が CONCURRENT_WINDOW より離れていればボーナスなし"""
+        mine = P(0, 0, 10.0, 50.0, ships=50, prod=2)
+        # (90, 90) は太陽を通らず ETA ≒ 54 (near ETA=12 との差 42 > CONCURRENT_WINDOW=5)
+        far  = P(1, -1, 90.0, 90.0, ships=5, prod=2)
+
+        cands_base = enumerate_candidates(
+            mine, [mine, far], [], 0,
+            remaining_turns=400, concurrent_etas=None,
+        )
+        cands_concurrent = enumerate_candidates(
+            mine, [mine, far], [], 0,
+            remaining_turns=400, concurrent_etas={12},  # ETA 差 42 > CONCURRENT_WINDOW
+        )
+        val_base = next(v for t, _, _, v, _ in cands_base if t.id == far.id)
+        val_conc = next(v for t, _, _, v, _ in cands_concurrent if t.id == far.id)
+        assert val_base == pytest.approx(val_conc, abs=0.1)
+
+
 class TestAbandonDefense:
     def test_abandons_when_defense_cost_too_high(self):
         """守備コストが生産価値を超えるとき doomed を返す"""

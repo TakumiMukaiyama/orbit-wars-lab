@@ -78,6 +78,10 @@ _CAPACITY_PER_PRODUCTION = 100
 
 JIT_MARGIN = 2
 
+# P8: 同時並行占領ボーナス — 既発射フリートの ETA と近い候補に加点
+CONCURRENT_WINDOW = 5
+CONCURRENT_BONUS = 20.0
+
 
 def _estimate_max_capacity(planet: "Planet") -> int:
     return planet.production * _CAPACITY_PER_PRODUCTION
@@ -426,6 +430,7 @@ def enumerate_candidates(
     my_planet_count: int = 0,
     domination: float = 0.0,
     is_opening: bool = False,
+    concurrent_etas: set[int] | None = None,
 ):
     """自分以外が所有する惑星をインターセプト位置で距離昇順ソートし上位 top_n 件を返す。
 
@@ -594,6 +599,11 @@ def enumerate_candidates(
                 )
                 + opening_contention_bonus
             )
+        # P8: 同時並行占領ボーナス — 既発射フリートの ETA と近い候補に加点
+        if concurrent_etas and any(
+            abs(my_eta - e) <= CONCURRENT_WINDOW for e in concurrent_etas
+        ):
+            value += CONCURRENT_BONUS
         out.append((t, ships_needed, angle, value, float(my_eta)))
     return out
 

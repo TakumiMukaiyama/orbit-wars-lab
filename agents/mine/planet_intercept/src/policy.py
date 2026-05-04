@@ -90,6 +90,7 @@ class HeuristicPolicy(Policy):
         intercepted_ids: set[int] = set()
         expand_fired_this_turn: int = 0
         fired_sources: set[int] = set()
+        concurrent_etas: set[int] = set()
 
         # 事前パス: 全自惑星の attack 候補を収集 (容量ダンプと reinforce パスで使用)
         attack_cands_by_planet: dict[int, list] = {}
@@ -107,6 +108,7 @@ class HeuristicPolicy(Policy):
                 my_planet_count=n,
                 domination=gs.domination,
                 is_opening=gs.is_opening,
+                concurrent_etas=concurrent_etas,
             )
 
         moves = []
@@ -245,6 +247,7 @@ class HeuristicPolicy(Policy):
                         timeline=gs.timelines.get(target_id),
                     )
             fired_sources.add(mine.id)
+            concurrent_etas.add(int(math.ceil(my_eta)))
 
             # 採用した Candidate を記録
             chosen_cand = next(
