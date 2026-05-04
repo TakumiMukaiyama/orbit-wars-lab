@@ -64,6 +64,14 @@ SNIPE_HOLD_PENALTY = 30.0  # 短命 snipe に対するペナルティ
 
 ETA_SYNC_TOLERANCE = 8  # max ETA difference (turns) between swarm sources (P3 緩和: 3→8)
 
+CAP_DUMP_MARGIN_TURNS = 10
+_CAPACITY_PER_PRODUCTION = 100
+
+
+def _estimate_max_capacity(planet: "Planet") -> int:
+    return planet.production * _CAPACITY_PER_PRODUCTION
+
+
 # P7: Opening Expand 改善
 OPENING_TURNS = 40  # opening phase の長さ (ターン数)
 MAX_EXPAND_PER_TURN = 2  # 1 ターンあたり expand 発射上限

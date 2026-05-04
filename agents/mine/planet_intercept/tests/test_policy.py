@@ -115,3 +115,33 @@ def test_replay_logger_chosen_idx_is_correct(tmp_path, monkeypatch):
         if src_record["chosen_target_id"] is not None:
             assert src_record["chosen_idx"] is not None
             assert 0 <= src_record["chosen_idx"] < len(src_record["candidates"])
+
+
+from src.targeting import _CAPACITY_PER_PRODUCTION
+
+
+class TestCapacityDump:
+    def test_fires_when_near_cap(self):
+        """容量上限-production*10 に達した惑星は強制発射する"""
+        prod = 2
+        max_cap = prod * _CAPACITY_PER_PRODUCTION
+        ships = max_cap - prod * 5  # CAP_DUMP_MARGIN_TURNS=10 より小さいマージン
+        obs = {
+            "player": 0,
+            "step": 100,
+            "angular_velocity": 0.0,
+            "comet_planet_ids": [],
+            "next_fleet_id": 0,
+            "initial_planets": [],
+            "comets": [],
+            "planets": [
+                [0, 0, 20.0, 50.0, 1.0, ships, prod],   # mine: 容量上限近い
+                [1, 1, 80.0, 50.0, 1.0, 10, 1],          # enemy
+            ],
+            "fleets": [],
+        }
+        gs = build_game_state(obs)
+        policy = HeuristicPolicy()
+        moves = policy.act(gs)
+        assert len(moves) >= 1
+        assert moves[0][0] == 0  # source は mine

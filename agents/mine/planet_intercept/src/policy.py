@@ -10,8 +10,10 @@ from abc import ABC, abstractmethod
 from .action_space import Candidate, candidates_from_heuristic
 from .state import GameState, global_features, planet_features
 from .targeting import (
+    CAP_DUMP_MARGIN_TURNS,
     MAX_EXPAND_PER_TURN,
     NEUTRAL_OWNER,
+    _estimate_max_capacity,
     classify_defense,
     enumerate_candidates,
     enumerate_intercept_candidates,
@@ -23,6 +25,38 @@ from .targeting import (
 from .world import apply_planned_arrival
 
 _REPLAY_ENV = "ORBIT_WARS_REPLAY_LOG"
+
+
+def _pick_dump_target(
+    mine: "Planet",
+    all_planets: list,
+    attack_cands: list,
+    player: int,
+) -> tuple[float, int] | None:
+    """容量ダンプ先を選ぶ。(angle, ships) を返す。なければ None。"""
+    # 1. value最大の attack 候補 (value > 0 優先、なければ最大でも使う)
+    if attack_cands:
+        best = max(attack_cands, key=lambda c: c[3])
+        angle = best[2]
+        return angle, best[1]
+
+    # 2. 最前線の自惑星 (全敵惑星への最短距離が最小)
+    enemy_planets = [p for p in all_planets if p.owner not in (player, NEUTRAL_OWNER)]
+    my_allies = [p for p in all_planets if p.owner == player and p.id != mine.id]
+    if enemy_planets and my_allies:
+        def frontier_score(p):
+            return min(math.hypot(p.x - e.x, p.y - e.y) for e in enemy_planets)
+        frontier = min(my_allies, key=frontier_score)
+        angle = math.atan2(frontier.y - mine.y, frontier.x - mine.x)
+        return angle, mine.ships
+
+    # 3. 最も近い敵惑星に直接発射
+    enemy_planets = [p for p in all_planets if p.owner not in (player, NEUTRAL_OWNER)]
+    if enemy_planets:
+        nearest = min(enemy_planets, key=lambda p: math.hypot(p.x - mine.x, p.y - mine.y))
+        angle = math.atan2(nearest.y - mine.y, nearest.x - mine.x)
+        return angle, mine.ships
+    return None
 
 
 class Policy(ABC):
@@ -54,11 +88,41 @@ class HeuristicPolicy(Policy):
         intercepted_ids: set[int] = set()
         expand_fired_this_turn: int = 0
         fired_sources: set[int] = set()
+
+        # 事前パス: 全自惑星の attack 候補を収集 (容量ダンプと reinforce パスで使用)
         attack_cands_by_planet: dict[int, list] = {}
+        for mine in gs.my_planets:
+            attack_cands_by_planet[mine.id] = enumerate_candidates(
+                mine,
+                gs.planets,
+                gs.fleets,
+                gs.player,
+                angular_velocity=gs.angular_velocity,
+                planned=planned,
+                mode=gs.mode,
+                remaining_turns=gs.remaining_turns,
+                timelines=gs.timelines,
+                my_planet_count=n,
+                domination=gs.domination,
+                is_opening=gs.is_opening,
+            )
 
         moves = []
         for mine in gs.my_planets:
             status, reserve = gs.defense_status[mine.id]
+
+            # 容量ダンプ: 生産停止を防ぐため上限手前で強制射出
+            max_cap = _estimate_max_capacity(mine)
+            if mine.ships >= max_cap - mine.production * CAP_DUMP_MARGIN_TURNS:
+                attack_cands = attack_cands_by_planet.get(mine.id, [])
+                dump_result = _pick_dump_target(mine, gs.planets, attack_cands, gs.player)
+                if dump_result is not None:
+                    dump_angle, _ = dump_result
+                    dump_ships = max(1, mine.ships - reserve)
+                    if dump_ships > 0:
+                        moves.append([mine.id, dump_angle, dump_ships])
+                        fired_sources.add(mine.id)
+                        continue
 
             if status == "doomed" and n > 1:
                 safe_allies = [
@@ -78,21 +142,7 @@ class HeuristicPolicy(Policy):
                         moves.append([mine.id, evac_angle, mine.ships])
                 continue
 
-            attack_cands = enumerate_candidates(
-                mine,
-                gs.planets,
-                gs.fleets,
-                gs.player,
-                angular_velocity=gs.angular_velocity,
-                planned=planned,
-                mode=gs.mode,
-                remaining_turns=gs.remaining_turns,
-                timelines=gs.timelines,
-                my_planet_count=n,
-                domination=gs.domination,
-                is_opening=gs.is_opening,
-            )
-            attack_cands_by_planet[mine.id] = attack_cands
+            attack_cands = attack_cands_by_planet[mine.id]
             intercept_cands = enumerate_intercept_candidates(
                 mine,
                 gs.planets,

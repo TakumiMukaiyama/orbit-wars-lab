@@ -1207,6 +1207,23 @@ class TestOpeningExpandFilter:
             assert by_id[1] > by_id[2], "競合中立の方が value が高いはず"
 
 
+from src.targeting import CAP_DUMP_MARGIN_TURNS, _estimate_max_capacity
+
+
+class TestEstimateMaxCapacity:
+    def test_production_1(self):
+        p = P(0, 0, 50, 50, ships=95, prod=1)
+        assert _estimate_max_capacity(p) == 100
+
+    def test_production_5(self):
+        p = P(0, 0, 50, 50, ships=95, prod=5)
+        assert _estimate_max_capacity(p) == 500
+
+    def test_production_2(self):
+        p = P(0, 0, 50, 50, ships=200, prod=2)
+        assert _estimate_max_capacity(p) == 200
+
+
 def _zero_reserve(p):
     return 0
 
