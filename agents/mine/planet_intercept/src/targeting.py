@@ -65,6 +65,7 @@ REAR_PUSH_FRACTION = 0.5
 FRONTIER_MIN_CANDS = 2
 
 SNIPE_MIN_HOLD = 5  # hold_turns がこれ未満のとき SNIPE_HOLD_PENALTY を加算
+ABANDON_COST_RATIO = 1.5
 SNIPE_HOLD_PENALTY = 30.0  # 短命 snipe に対するペナルティ
 
 ETA_SYNC_TOLERANCE = 8  # max ETA difference (turns) between swarm sources (P3 緩和: 3→8)
@@ -615,25 +616,34 @@ def classify_defense(
     fleets,
     player: int,
     timeline: list[PlanetState] | None = None,
-) -> tuple[str, int]:
-    """mine の防衛状況を ("safe"|"threatened"|"doomed", reserve) で返す。
+) -> tuple[str, int, int | None]:
+    """mine の防衛状況を ("safe"|"threatened"|"doomed", reserve, fall_turn) で返す。
 
     timeline があるとき:
       first_turn_lost が None -> "safe" (自軍 in-flight で救われるケース含む)
       そうでなければ fall turn 時点の state.ships を敵側兵力とみなし、
         mine.ships 未満なら "doomed"、それ以外は "threatened"。
     timeline=None のときは旧 fleet_heading_to ベース判定 (後方互換)。
+
+    cost/value チェック: "threatened" と判定された場合でも、守備コストが
+    mine.production * HOLD_HORIZON の ABANDON_COST_RATIO 倍を超えるなら "doomed" に格上げ。
     """
+    fall_turn: int | None = None
+
     if timeline is not None:
         fall_turn = first_turn_lost(mine, timeline, player)
         if fall_turn is None:
-            return "safe", 0
+            return "safe", 0, None
         state = state_at(timeline, fall_turn)
         enemy_ships = int(state.ships) if state is not None else int(mine.ships) + 1
         reserve = max(0, enemy_ships)
         if mine.ships < reserve:
-            return "doomed", reserve
-        return "threatened", reserve
+            return "doomed", reserve, fall_turn
+        # cost/value チェック: 守備コストが生産価値の ABANDON_COST_RATIO 倍を超えるなら放棄
+        defense_value = mine.production * HOLD_HORIZON
+        if mine.production > 0 and reserve > defense_value * ABANDON_COST_RATIO:
+            return "doomed", reserve, fall_turn
+        return "threatened", reserve, fall_turn
 
     incoming = sum(
         f.ships
@@ -641,10 +651,10 @@ def classify_defense(
         if f.owner != player and fleet_heading_to(f, mine, tolerance_turns=15.0)
     )
     if incoming == 0:
-        return "safe", 0
+        return "safe", 0, None
     if mine.ships >= incoming:
-        return "threatened", incoming
-    return "doomed", incoming
+        return "threatened", incoming, None
+    return "doomed", incoming, None
 
 
 def enumerate_support_candidates(

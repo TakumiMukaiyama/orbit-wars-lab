@@ -110,7 +110,7 @@ class HeuristicPolicy(Policy):
 
         moves = []
         for mine in gs.my_planets:
-            status, reserve = gs.defense_status[mine.id]
+            status, reserve, _fall_turn = gs.defense_status[mine.id]
 
             # 容量ダンプ: 生産停止を防ぐため上限手前で強制射出
             max_cap = _estimate_max_capacity(mine)

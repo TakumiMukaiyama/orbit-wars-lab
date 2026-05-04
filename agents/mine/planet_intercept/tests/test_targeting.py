@@ -615,14 +615,14 @@ class TestEnumerateInterceptCandidates:
 class TestClassifyDefense:
     def test_no_incoming_is_safe(self):
         mine = P(0, 0, 50, 50, ships=50)
-        status, reserve = classify_defense(mine, fleets=[], player=0)
+        status, reserve, _ft = classify_defense(mine, fleets=[], player=0)
         assert status == "safe"
         assert reserve == 0
 
     def test_threatened_when_ships_cover_incoming(self):
         mine = P(0, 0, 50, 50, ships=50)
         enemy = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=30)
-        status, reserve = classify_defense(mine, [enemy], player=0)
+        status, reserve, _ft = classify_defense(mine, [enemy], player=0)
         # mine.ships=50 >= incoming=30 -> threatened
         assert status == "threatened"
         assert reserve == 30
@@ -630,7 +630,7 @@ class TestClassifyDefense:
     def test_doomed_when_ships_insufficient(self):
         mine = P(0, 0, 50, 50, ships=10)
         enemy = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=30)
-        status, reserve = classify_defense(mine, [enemy], player=0)
+        status, reserve, _ft = classify_defense(mine, [enemy], player=0)
         # mine.ships=10 < incoming=30 -> doomed
         assert status == "doomed"
         assert reserve == 30
@@ -638,20 +638,20 @@ class TestClassifyDefense:
     def test_own_fleet_not_counted(self):
         mine = P(0, 0, 50, 50, ships=10)
         own = F(1, 0, 30, 50, angle=0.0, from_id=99, ships=30)
-        status, reserve = classify_defense(mine, [own], player=0)
+        status, reserve, _ft = classify_defense(mine, [own], player=0)
         assert status == "safe"
 
     def test_sideways_fleet_ignored(self):
         mine = P(0, 0, 50, 50, ships=10)
         sideways = F(1, 1, 20, 20, angle=0.0, from_id=99, ships=30)
-        status, reserve = classify_defense(mine, [sideways], player=0)
+        status, reserve, _ft = classify_defense(mine, [sideways], player=0)
         assert status == "safe"
 
     def test_multiple_fleets_summed(self):
         mine = P(0, 0, 50, 50, ships=40)
         e1 = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=20)
         e2 = F(2, 2, 30, 50, angle=0.0, from_id=99, ships=25)
-        status, reserve = classify_defense(mine, [e1, e2], player=0)
+        status, reserve, _ft = classify_defense(mine, [e1, e2], player=0)
         # incoming=45, mine.ships=40 < 45 -> doomed
         assert status == "doomed"
         assert reserve == 45
@@ -665,7 +665,7 @@ class TestClassifyDefense:
             Arrival(eta=5, owner=1, ships=30),
         ]
         timeline = simulate_planet_timeline(mine, arrivals, horizon=10)
-        status, reserve = classify_defense(mine, fleets=[], player=0, timeline=timeline)
+        status, reserve, _ft = classify_defense(mine, fleets=[], player=0, timeline=timeline)
         assert status == "safe"
         assert reserve == 0
 
@@ -675,7 +675,7 @@ class TestClassifyDefense:
         # eta=3 で敵 30 ships -> 戦闘後 owner=1, ships=20
         arrivals = [Arrival(eta=3, owner=1, ships=30)]
         timeline = simulate_planet_timeline(mine, arrivals, horizon=10)
-        status, reserve = classify_defense(mine, fleets=[], player=0, timeline=timeline)
+        status, reserve, _ft = classify_defense(mine, fleets=[], player=0, timeline=timeline)
         assert status == "doomed"
         # fall_turn=3 時点の state.ships は 20 (敵側)
         assert reserve == 20
@@ -688,7 +688,7 @@ class TestClassifyDefense:
         timeline = simulate_planet_timeline(vulnerable, arrivals, horizon=5)
         # vulnerable.ships=5 < reserve=15 -> doomed のはずだが、
         # mine.ships=100 に差し替えて呼べば threatened になる契約を確認
-        status, reserve = classify_defense(
+        status, reserve, _ft = classify_defense(
             Planet(id=1, owner=0, x=50, y=50, radius=1.0, ships=100, production=0),
             fleets=[],
             player=0,
@@ -1453,3 +1453,38 @@ class TestJITDispatch:
         )
         assert len(cands) >= 1
         assert cands[0][0].id == defended.id
+
+
+from src.targeting import ABANDON_COST_RATIO, HOLD_HORIZON
+
+
+class TestAbandonDefense:
+    def test_abandons_when_defense_cost_too_high(self):
+        """守備コストが生産価値を超えるとき doomed を返す"""
+        # mine: ships=50, prod=1 -> defense_value = 1*20=20, threshold = 20*1.5=30
+        # enemy arrives at eta=1 with 82 ships:
+        #   t=1: 50+1=51, 82 vs 51 -> owner=1, ships=31
+        #   fall_turn=1, reserve=31, mine.ships(50) >= 31 -> cost check: 31 > 30 -> doomed
+        mine = P(0, 0, 50.0, 50.0, ships=50, prod=1)
+        enemy_fleet = F(0, 1, 45.0, 50.0, math.pi, 99, ships=82)
+        arrivals = [Arrival(eta=1, owner=1, ships=82)]
+        timeline = simulate_planet_timeline(mine, arrivals, horizon=80)
+        status, reserve, fall_turn = classify_defense(
+            mine, [enemy_fleet], 0, timeline=timeline
+        )
+        assert status == "doomed"
+
+    def test_keeps_threatened_when_cost_acceptable(self):
+        """守備コストが生産価値以内なら threatened を維持"""
+        # mine: ships=50, prod=5 -> defense_value = 5*20=100, threshold = 100*1.5=150
+        # enemy arrives at eta=1 with 62 ships:
+        #   t=1: 50+5=55, 62 vs 55 -> owner=1, ships=7
+        #   fall_turn=1, reserve=7, mine.ships(50) >= 7 -> cost check: 7 > 150? No -> threatened
+        mine = P(0, 0, 50.0, 50.0, ships=50, prod=5)
+        enemy_fleet = F(0, 1, 45.0, 50.0, math.pi, 99, ships=62)
+        arrivals = [Arrival(eta=1, owner=1, ships=62)]
+        timeline = simulate_planet_timeline(mine, arrivals, horizon=80)
+        status, reserve, fall_turn = classify_defense(
+            mine, [enemy_fleet], 0, timeline=timeline
+        )
+        assert status == "threatened"
