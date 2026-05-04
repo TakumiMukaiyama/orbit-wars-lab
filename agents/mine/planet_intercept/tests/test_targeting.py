@@ -1455,7 +1455,52 @@ class TestJITDispatch:
         assert cands[0][0].id == defended.id
 
 
-from src.targeting import ABANDON_COST_RATIO, HOLD_HORIZON
+from src.targeting import ABANDON_COST_RATIO, HOLD_HORIZON, SNIPE_THIN_THRESHOLD, enumerate_post_launch_snipe_candidates
+
+
+class TestPostLaunchSnipe:
+    def test_generates_candidate_for_thin_origin(self):
+        """敵が出撃した後に手薄になった惑星への候補が生成される"""
+        # y=80 にすることで太陽 (50,50) を回避
+        mine = P(0, 0, 10.0, 80.0, ships=50, prod=2)
+        enemy_origin = P(1, 1, 70.0, 80.0, ships=5, prod=2)  # 手薄 (< SNIPE_THIN_THRESHOLD)
+        all_planets = [mine, enemy_origin]
+        fleet = F(0, 1, 65.0, 80.0, math.pi, enemy_origin.id, ships=40)
+
+        cands = enumerate_post_launch_snipe_candidates(
+            my_planet=mine,
+            all_planets=all_planets,
+            fleets=[fleet],
+            player=0,
+        )
+        assert len(cands) >= 1
+        assert cands[0][0].id == enemy_origin.id
+
+    def test_no_candidate_when_origin_not_thin(self):
+        """出撃元が手薄でないなら候補なし"""
+        mine = P(0, 0, 10.0, 80.0, ships=50, prod=2)
+        enemy_origin = P(1, 1, 70.0, 80.0, ships=50, prod=2)  # 手薄でない
+        fleet = F(0, 1, 65.0, 80.0, math.pi, enemy_origin.id, ships=10)
+        cands = enumerate_post_launch_snipe_candidates(
+            my_planet=mine,
+            all_planets=[mine, enemy_origin],
+            fleets=[fleet],
+            player=0,
+        )
+        assert len(cands) == 0
+
+    def test_no_candidate_for_own_fleets(self):
+        """自分のフリートは無視する"""
+        mine = P(0, 0, 10.0, 80.0, ships=50, prod=2)
+        ally_origin = P(1, 0, 70.0, 80.0, ships=3, prod=2)  # 自軍惑星
+        fleet = F(0, 0, 65.0, 80.0, math.pi, ally_origin.id, ships=40)
+        cands = enumerate_post_launch_snipe_candidates(
+            my_planet=mine,
+            all_planets=[mine, ally_origin],
+            fleets=[fleet],
+            player=0,
+        )
+        assert len(cands) == 0
 
 
 class TestAbandonDefense:

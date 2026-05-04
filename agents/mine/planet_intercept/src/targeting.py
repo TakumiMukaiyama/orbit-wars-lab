@@ -68,6 +68,9 @@ SNIPE_MIN_HOLD = 5  # hold_turns がこれ未満のとき SNIPE_HOLD_PENALTY を
 ABANDON_COST_RATIO = 1.5
 SNIPE_HOLD_PENALTY = 30.0  # 短命 snipe に対するペナルティ
 
+SNIPE_THIN_THRESHOLD = 15
+SNIPE_URGENCY_BONUS = 30.0
+
 ETA_SYNC_TOLERANCE = 8  # max ETA difference (turns) between swarm sources (P3 緩和: 3→8)
 
 CAP_DUMP_MARGIN_TURNS = 10
@@ -880,6 +883,99 @@ def enumerate_snipe_candidates(
             continue
 
         out.append((target, needed, angle, value, float(my_eta)))
+    return out
+
+
+def enumerate_post_launch_snipe_candidates(
+    my_planet: Planet,
+    all_planets,
+    fleets,
+    player: int,
+    angular_velocity: float = 0.0,
+    planned: dict | None = None,
+    remaining_turns: int | None = None,
+    timelines: dict | None = None,
+) -> list:
+    """敵が出撃直後に手薄になった惑星へのスナイプ候補を列挙する。
+
+    fleets 内の enemy fleet の from_planet_id 惑星が SNIPE_THIN_THRESHOLD 未満なら
+    通常の attack 候補と同じ value 式 + SNIPE_URGENCY_BONUS で候補を生成する。
+    全モード (ahead/neutral/behind) で適用。
+    """
+    from .utils import CENTER
+
+    if planned is None:
+        planned = {}
+
+    planet_map = {p.id: p for p in all_planets}
+    seen_origins: set[int] = set()
+    out = []
+
+    for f in fleets:
+        if f.owner == player:
+            continue
+        origin_id = f.from_planet_id
+        if origin_id in seen_origins:
+            continue
+        origin = planet_map.get(origin_id)
+        if origin is None or origin.owner == player:
+            continue
+        if origin.ships >= SNIPE_THIN_THRESHOLD:
+            continue
+        seen_origins.add(origin_id)
+
+        r = math.hypot(origin.x - CENTER, origin.y - CENTER)
+        is_orbital = angular_velocity != 0.0 and (r + origin.radius < 50)
+        if is_orbital:
+            ships_approx = ships_budget(origin)
+            ix, iy, my_eta = intercept_pos(
+                my_planet.x, my_planet.y, ships_approx, origin, angular_velocity
+            )
+        else:
+            ix, iy = origin.x, origin.y
+            ships_approx = ships_budget(origin)
+            my_eta = route_eta(my_planet.x, my_planet.y, ix, iy, ships_approx)
+
+        if segment_hits_sun(my_planet.x, my_planet.y, ix, iy):
+            continue
+        if remaining_turns is not None and my_eta > remaining_turns:
+            continue
+
+        already_sent = planned.get(origin.id, 0)
+        if timelines and origin.id in timelines:
+            ships_needed = ships_needed_to_capture_at(
+                origin, timelines[origin.id], player, int(math.ceil(my_eta))
+            )
+            ships_needed = max(0, ships_needed - already_sent)
+        else:
+            ships_needed = ships_budget(origin, my_eta=my_eta, already_sent=already_sent)
+        if ships_needed <= 0:
+            continue
+
+        angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
+        # 出撃元フリートは origin から出発済みのため rival として除外する
+        fleets_excl = [f2 for f2 in fleets if f2.from_planet_id != origin_id]
+        rival_eta = compute_rival_eta(origin, player, fleets_excl, all_planets, angular_velocity)
+        # remaining_turns=None のとき target_value が HOLD_HORIZON(20) に縮退するのを防ぐ
+        _rt = remaining_turns if remaining_turns is not None else int(ASSET_HORIZON)
+        value = (
+            target_value(
+                my_planet,
+                ix,
+                iy,
+                origin.production,
+                rival_eta,
+                ships_needed,
+                my_eta,
+                target_owner=origin.owner,
+                remaining_turns=_rt,
+            )
+            + SNIPE_URGENCY_BONUS
+        )
+        if value <= 0:
+            continue
+        out.append((origin, ships_needed, angle, value, float(my_eta)))
+
     return out
 
 

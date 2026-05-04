@@ -17,6 +17,7 @@ from .targeting import (
     classify_defense,
     enumerate_candidates,
     enumerate_intercept_candidates,
+    enumerate_post_launch_snipe_candidates,
     enumerate_rear_push_candidates,
     enumerate_reinforce_candidates,
     enumerate_snipe_candidates,
@@ -177,6 +178,19 @@ class HeuristicPolicy(Policy):
                 )
             else:
                 snipe_cands = []
+
+            # 全モードで出撃直後スナイプを追加
+            post_launch_cands = enumerate_post_launch_snipe_candidates(
+                mine,
+                gs.planets,
+                gs.fleets,
+                gs.player,
+                angular_velocity=gs.angular_velocity,
+                planned=planned,
+                remaining_turns=gs.remaining_turns,
+                timelines=gs.timelines,
+            )
+            snipe_cands = snipe_cands + post_launch_cands
 
             # Candidate 変換 (ログ用)
             cands_for_log = candidates_from_heuristic(
