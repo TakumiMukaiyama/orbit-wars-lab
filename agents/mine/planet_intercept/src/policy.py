@@ -145,7 +145,21 @@ class HeuristicPolicy(Policy):
                         moves.append([mine.id, evac_angle, mine.ships])
                 continue
 
-            attack_cands = attack_cands_by_planet[mine.id]
+            attack_cands = enumerate_candidates(
+                mine,
+                gs.planets,
+                gs.fleets,
+                gs.player,
+                angular_velocity=gs.angular_velocity,
+                planned=planned,
+                mode=gs.mode,
+                remaining_turns=gs.remaining_turns,
+                timelines=gs.timelines,
+                my_planet_count=n,
+                domination=gs.domination,
+                is_opening=gs.is_opening,
+                concurrent_etas=concurrent_etas,
+            )
             intercept_cands = enumerate_intercept_candidates(
                 mine,
                 gs.planets,
