@@ -18,6 +18,7 @@ from .targeting import (
     enumerate_reinforce_candidates,
     enumerate_snipe_candidates,
     enumerate_support_candidates,
+    enumerate_swarm_candidates,
     select_move,
 )
 from .world import apply_planned_arrival
@@ -58,7 +59,7 @@ class HeuristicPolicy(Policy):
 
         moves = []
         for mine in gs.my_planets:
-            status, reserve = gs.defense_status[mine.id]
+            status, reserve, fall_turn = gs.defense_status[mine.id]
 
             if status == "doomed" and n > 1:
                 safe_allies = [
@@ -139,7 +140,7 @@ class HeuristicPolicy(Policy):
             self.last_candidates_by_source[mine.id] = cands_for_log
 
             all_cands = attack_cands + intercept_cands + support_cands + snipe_cands
-            picked = select_move(mine, all_cands, reserve=reserve, my_planet_count=n)
+            picked = select_move(mine, all_cands, reserve=reserve, my_planet_count=n, fall_turn=fall_turn)
             if picked is None:
                 continue
 
@@ -230,6 +231,44 @@ class HeuristicPolicy(Policy):
                 horizon=gs.horizon,
             )
             reinforce_fired_sources.add(r.source_id)
+
+        # swarm パス: 単独では届かないターゲットへの 2 惑星協調攻撃
+        all_fired = fired_sources | reinforce_fired_sources
+        swarm_missions = enumerate_swarm_candidates(
+            my_planets=gs.my_planets,
+            all_planets=gs.planets,
+            fleets=gs.fleets,
+            player=gs.player,
+            angular_velocity=gs.angular_velocity,
+            planned=planned,
+            fired_sources=all_fired,
+            defense_status=gs.defense_status,
+            mode=gs.mode,
+            remaining_turns=gs.remaining_turns,
+            timelines=gs.timelines,
+        )
+        swarm_fired_sources: set[int] = set()
+        for sm in sorted(swarm_missions, key=lambda m: -m.value):
+            if sm.src_a.id in all_fired or sm.src_a.id in swarm_fired_sources:
+                continue
+            if sm.src_b.id in all_fired or sm.src_b.id in swarm_fired_sources:
+                continue
+            moves.append([sm.src_a.id, sm.angle_a, sm.ships_a])
+            moves.append([sm.src_b.id, sm.angle_b, sm.ships_b])
+            eta_int = max(1, int(math.ceil(max(sm.eta_a, sm.eta_b))))
+            apply_planned_arrival(
+                gs.ledger,
+                gs.timelines,
+                gs.planets,
+                target_id=sm.target.id,
+                owner=gs.player,
+                ships=sm.ships_a + sm.ships_b,
+                eta=eta_int,
+                horizon=gs.horizon,
+            )
+            planned[sm.target.id] = planned.get(sm.target.id, 0) + sm.ships_a + sm.ships_b
+            swarm_fired_sources.add(sm.src_a.id)
+            swarm_fired_sources.add(sm.src_b.id)
 
         return moves
 

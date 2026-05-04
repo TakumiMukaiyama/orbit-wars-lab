@@ -615,14 +615,14 @@ class TestEnumerateInterceptCandidates:
 class TestClassifyDefense:
     def test_no_incoming_is_safe(self):
         mine = P(0, 0, 50, 50, ships=50)
-        status, reserve = classify_defense(mine, fleets=[], player=0)
+        status, reserve, _ = classify_defense(mine, fleets=[], player=0)
         assert status == "safe"
         assert reserve == 0
 
     def test_threatened_when_ships_cover_incoming(self):
         mine = P(0, 0, 50, 50, ships=50)
         enemy = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=30)
-        status, reserve = classify_defense(mine, [enemy], player=0)
+        status, reserve, _ = classify_defense(mine, [enemy], player=0)
         # mine.ships=50 >= incoming=30 -> threatened
         assert status == "threatened"
         assert reserve == 30
@@ -630,7 +630,7 @@ class TestClassifyDefense:
     def test_doomed_when_ships_insufficient(self):
         mine = P(0, 0, 50, 50, ships=10)
         enemy = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=30)
-        status, reserve = classify_defense(mine, [enemy], player=0)
+        status, reserve, _ = classify_defense(mine, [enemy], player=0)
         # mine.ships=10 < incoming=30 -> doomed
         assert status == "doomed"
         assert reserve == 30
@@ -638,20 +638,20 @@ class TestClassifyDefense:
     def test_own_fleet_not_counted(self):
         mine = P(0, 0, 50, 50, ships=10)
         own = F(1, 0, 30, 50, angle=0.0, from_id=99, ships=30)
-        status, reserve = classify_defense(mine, [own], player=0)
+        status, reserve, _ = classify_defense(mine, [own], player=0)
         assert status == "safe"
 
     def test_sideways_fleet_ignored(self):
         mine = P(0, 0, 50, 50, ships=10)
         sideways = F(1, 1, 20, 20, angle=0.0, from_id=99, ships=30)
-        status, reserve = classify_defense(mine, [sideways], player=0)
+        status, reserve, _ = classify_defense(mine, [sideways], player=0)
         assert status == "safe"
 
     def test_multiple_fleets_summed(self):
         mine = P(0, 0, 50, 50, ships=40)
         e1 = F(1, 1, 30, 50, angle=0.0, from_id=99, ships=20)
         e2 = F(2, 2, 30, 50, angle=0.0, from_id=99, ships=25)
-        status, reserve = classify_defense(mine, [e1, e2], player=0)
+        status, reserve, _ = classify_defense(mine, [e1, e2], player=0)
         # incoming=45, mine.ships=40 < 45 -> doomed
         assert status == "doomed"
         assert reserve == 45
@@ -665,7 +665,7 @@ class TestClassifyDefense:
             Arrival(eta=5, owner=1, ships=30),
         ]
         timeline = simulate_planet_timeline(mine, arrivals, horizon=10)
-        status, reserve = classify_defense(mine, fleets=[], player=0, timeline=timeline)
+        status, reserve, _ = classify_defense(mine, fleets=[], player=0, timeline=timeline)
         assert status == "safe"
         assert reserve == 0
 
@@ -675,7 +675,7 @@ class TestClassifyDefense:
         # eta=3 で敵 30 ships -> 戦闘後 owner=1, ships=20
         arrivals = [Arrival(eta=3, owner=1, ships=30)]
         timeline = simulate_planet_timeline(mine, arrivals, horizon=10)
-        status, reserve = classify_defense(mine, fleets=[], player=0, timeline=timeline)
+        status, reserve, _ = classify_defense(mine, fleets=[], player=0, timeline=timeline)
         assert status == "doomed"
         # fall_turn=3 時点の state.ships は 20 (敵側)
         assert reserve == 20
@@ -688,7 +688,7 @@ class TestClassifyDefense:
         timeline = simulate_planet_timeline(vulnerable, arrivals, horizon=5)
         # vulnerable.ships=5 < reserve=15 -> doomed のはずだが、
         # mine.ships=100 に差し替えて呼べば threatened になる契約を確認
-        status, reserve = classify_defense(
+        status, reserve, _ = classify_defense(
             Planet(id=1, owner=0, x=50, y=50, radius=1.0, ships=100, production=0),
             fleets=[],
             player=0,

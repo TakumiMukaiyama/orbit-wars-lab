@@ -38,6 +38,11 @@ INNER_ORBITAL_RADIUS = 34.0
 INNER_ORBITAL_BONUS = 55.0
 STATIC_HIGH_PROD_BONUS = 30.0
 
+# P8: 序盤 production^2 urgency — 開幕の高生産惑星争奪を積極化
+# elapsed が 0 のとき production^2 * K のボーナスを付与し、TURNS ターンで線形減衰→0
+PROD_URGENCY_K = 3.0
+PROD_URGENCY_TURNS = 100
+
 # P5: 中央性ボーナス — 盤面中心に近いほど加点 (右寄り閉塞の回避)
 CENTRAL_REF_RADIUS = 35.0  # この距離でボーナス 0
 CENTRAL_BONUS_MAX = 40.0  # 中心 (r=0) での最大加点
@@ -269,6 +274,14 @@ def _overextend_factor(my_planet_count: int, domination: float) -> float:
     return max(OVEREXTEND_FLOOR, 1.0 - excess * OVEREXTEND_DECAY_PER_PLANET)
 
 
+def _prod_urgency_bonus(production: int, elapsed_turns: int) -> float:
+    """P8: 序盤限定の production^2 urgency ボーナス。elapsed=0 で最大、PROD_URGENCY_TURNS で 0。"""
+    if elapsed_turns >= PROD_URGENCY_TURNS:
+        return 0.0
+    decay = 1.0 - elapsed_turns / PROD_URGENCY_TURNS
+    return production * production * PROD_URGENCY_K * decay
+
+
 def target_value(
     mine: Planet,
     target_x: float,
@@ -386,8 +399,11 @@ def enumerate_candidates(
                 and r < CENTRAL_REF_RADIUS
             ):
                 central_bonus_sort = CENTRAL_BONUS_MAX * (1.0 - r / CENTRAL_REF_RADIUS)
+            # P8: 序盤 production^2 urgency
+            urgency_sort = _prod_urgency_bonus(t.production, elapsed_turns)
             priority = (
-                t.production * 25.0 + inner_bonus + static_bonus + central_bonus_sort - cur_dist
+                t.production * 25.0 + inner_bonus + static_bonus + central_bonus_sort
+                + urgency_sort - cur_dist
             )
             return (-priority, cur_dist)
         # 静止惑星を先、同グループ内は現在距離でソート
@@ -490,17 +506,21 @@ def enumerate_candidates(
             ):
                 _central_bonus = CENTRAL_BONUS_MAX * (1.0 - r / CENTRAL_REF_RADIUS)
             _focus_bonus = FOCUS_BONUS_PER_PLANNED_SHIP * max(0, int(focus_planned))
+            # P8: 序盤 production^2 urgency
+            _urgency = _prod_urgency_bonus(t.production, elapsed_turns)
             value = (
                 t.production * hold * factor
                 + _opening_bonus
                 + _central_bonus
                 + _focus_bonus
+                + _urgency
                 + opening_contention_bonus
                 - ships_needed
                 - my_eta * TRAVEL_PENALTY
                 - my_eta**2 * TRAVEL_PENALTY_QUAD
             )
         else:
+            _urgency = _prod_urgency_bonus(t.production, elapsed_turns)
             value = (
                 target_value(
                     my_planet,
@@ -519,6 +539,7 @@ def enumerate_candidates(
                     domination=domination,
                     focus_planned_ships=focus_planned,
                 )
+                + _urgency
                 + opening_contention_bonus
             )
         out.append((t, ships_needed, angle, value, float(my_eta)))
@@ -546,9 +567,10 @@ def classify_defense(
     fleets,
     player: int,
     timeline: list[PlanetState] | None = None,
-) -> tuple[str, int]:
-    """mine の防衛状況を ("safe"|"threatened"|"doomed", reserve) で返す。
+) -> tuple[str, int, int | None]:
+    """mine の防衛状況を ("safe"|"threatened"|"doomed", reserve, fall_turn) で返す。
 
+    fall_turn は惑星が陥落するターン数 (None = 安全)。
     timeline があるとき:
       first_turn_lost が None -> "safe" (自軍 in-flight で救われるケース含む)
       そうでなければ fall turn 時点の state.ships を敵側兵力とみなし、
@@ -558,13 +580,13 @@ def classify_defense(
     if timeline is not None:
         fall_turn = first_turn_lost(mine, timeline, player)
         if fall_turn is None:
-            return "safe", 0
+            return "safe", 0, None
         state = state_at(timeline, fall_turn)
         enemy_ships = int(state.ships) if state is not None else int(mine.ships) + 1
         reserve = max(0, enemy_ships)
         if mine.ships < reserve:
-            return "doomed", reserve
-        return "threatened", reserve
+            return "doomed", reserve, fall_turn
+        return "threatened", reserve, fall_turn
 
     incoming = sum(
         f.ships
@@ -572,10 +594,10 @@ def classify_defense(
         if f.owner != player and fleet_heading_to(f, mine, tolerance_turns=15.0)
     )
     if incoming == 0:
-        return "safe", 0
+        return "safe", 0, None
     if mine.ships >= incoming:
-        return "threatened", incoming
-    return "doomed", incoming
+        return "threatened", incoming, None
+    return "doomed", incoming, None
 
 
 def enumerate_support_candidates(
@@ -958,12 +980,22 @@ def expand_priority_score(
     return CONTENTION_BONUS_MAX / (1.0 + gap)
 
 
-def select_move(my_planet: Planet, candidates, reserve: int = 0, my_planet_count: int = 1):
+def select_move(
+    my_planet: Planet,
+    candidates,
+    reserve: int = 0,
+    my_planet_count: int = 1,
+    fall_turn: int | None = None,
+):
     """value 最大の発射可能候補を返す。なければ None。
 
     返り値: (target_id, angle, ships_needed, my_eta) または None。
     候補タプルは (target, ships_needed, angle, value) または
     (target, ships_needed, angle, value, my_eta) を受け付ける。
+
+    ETA ゲート (B 案): fall_turn が存在し、かつ候補の my_eta < fall_turn なら
+    reserve を無視して発射を許可する。攻撃が帰還前に惑星が落ちない場合にのみ
+    reserve を免除するため、防衛凍結を防ぎつつ安全性を保つ。
     """
     best = None
     best_value = -math.inf
@@ -972,7 +1004,11 @@ def select_move(my_planet: Planet, candidates, reserve: int = 0, my_planet_count
         my_eta = float(cand[4]) if len(cand) >= 5 else 0.0
         if ships_needed <= 0 or value <= 0:
             continue
-        if my_planet.ships - reserve < ships_needed:
+        # ETA ゲート: 攻撃が帰還する前に惑星が落ちない場合は reserve を免除
+        effective_reserve = reserve
+        if fall_turn is not None and my_eta < fall_turn:
+            effective_reserve = 0
+        if my_planet.ships - effective_reserve < ships_needed:
             continue
         if value > best_value:
             best_value = value

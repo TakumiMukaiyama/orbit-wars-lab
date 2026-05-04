@@ -62,7 +62,7 @@ def test_build_game_state_defense_status_keys():
     gs = build_game_state(obs)
     for p in gs.my_planets:
         assert p.id in gs.defense_status
-        status, reserve = gs.defense_status[p.id]
+        status, reserve, _ = gs.defense_status[p.id]
         assert status in ("safe", "threatened", "doomed")
         assert reserve >= 0
 

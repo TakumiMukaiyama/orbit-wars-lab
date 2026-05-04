@@ -33,7 +33,7 @@ class GameState:
     domination: float
     timelines: dict[int, list[PlanetState]]
     ledger: dict[int, list[Arrival]]
-    defense_status: dict[int, tuple[str, int]]
+    defense_status: dict[int, tuple[str, int, int | None]]
     horizon: int
     is_opening: bool
 
@@ -70,14 +70,14 @@ def build_game_state(obs, comet_ids: frozenset[int] | None = None) -> GameState:
     elapsed_turns = 500 - remaining_turns
     is_opening = elapsed_turns < OPENING_TURNS
 
-    defense_status: dict[int, tuple[str, int]] = {
+    defense_status: dict[int, tuple[str, int, int | None]] = {
         p.id: classify_defense(p, fleets, player, timeline=timelines.get(p.id))
         for p in my_planets
     }
     if is_opening:
         defense_status = {
-            pid: (status, reserve // 2)
-            for pid, (status, reserve) in defense_status.items()
+            pid: (status, reserve // 2, fall_turn)
+            for pid, (status, reserve, fall_turn) in defense_status.items()
         }
 
     return GameState(
