@@ -1108,12 +1108,9 @@ def enumerate_swarm_candidates(
                             continue
                         total_avail = avail_a + avail_b + avail_c
                         ships_a3 = max(1, min(avail_a, math.ceil(needed * avail_a / total_avail)))
-                        ships_b3 = max(1, min(avail_b, math.ceil(needed * avail_b / total_avail)))
+                        ships_b3 = max(1, min(avail_b, needed - ships_a3))
                         ships_c3 = needed - ships_a3 - ships_b3
-                        if ships_c3 <= 0 or ships_c3 > avail_c:
-                            ships_c3 = min(avail_c, needed - ships_a3 - 1)
-                            ships_b3 = needed - ships_a3 - ships_c3
-                        if ships_b3 <= 0 or ships_c3 <= 0:
+                        if ships_b3 <= 0 or ships_c3 <= 0 or ships_c3 > avail_c:
                             continue
                         joint_eta3 = max(eta_a, eta_b, eta_c)
                         value3 = target_value(
@@ -1135,7 +1132,7 @@ def enumerate_swarm_candidates(
                         break
                     if not found_triple:
                         continue
-                    continue  # 3惑星版を追加したので2惑星版はスキップ
+                    continue  # 2源不足ペアは3源で処理済み(または断念)のためスキップ
 
                 if avail_a < 1 or avail_b < 1:
                     continue
