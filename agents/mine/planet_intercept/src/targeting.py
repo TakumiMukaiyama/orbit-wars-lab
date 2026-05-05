@@ -64,10 +64,35 @@ HIGH_PROD_RESERVE = 4  # 別枠で追加する最大数
 BEHIND_THRESHOLD = -0.3
 AHEAD_THRESHOLD = 0.3
 
+REAR_DISTANCE_THRESHOLD = 40.0
+REAR_MIN_SURPLUS = 20
+REAR_PUSH_FRACTION = 0.5
+FRONTIER_MIN_CANDS = 2
+
 SNIPE_MIN_HOLD = 5  # hold_turns がこれ未満のとき SNIPE_HOLD_PENALTY を加算
+ABANDON_COST_RATIO = 1.5
 SNIPE_HOLD_PENALTY = 30.0  # 短命 snipe に対するペナルティ
 
+SNIPE_THIN_THRESHOLD = 15
+SNIPE_URGENCY_BONUS = 30.0
+
 ETA_SYNC_TOLERANCE = 8  # max ETA difference (turns) between swarm sources (P3 緩和: 3→8)
+
+CAP_DUMP_MARGIN_TURNS = 10
+_CAPACITY_PER_PRODUCTION = 100
+
+JIT_MARGIN = 2
+
+OVERCAP_FACTOR = 1.2
+
+# P8: 同時並行占領ボーナス — 既発射フリートの ETA と近い候補に加点
+CONCURRENT_WINDOW = 5
+CONCURRENT_BONUS = 20.0
+
+
+def _estimate_max_capacity(planet: "Planet") -> int:
+    return planet.production * _CAPACITY_PER_PRODUCTION
+
 
 # P7: Opening Expand 改善
 OPENING_TURNS = 40  # opening phase の長さ (ターン数)
@@ -87,6 +112,10 @@ class SwarmMission:
     angle_b: float
     eta_b: float
     value: float
+    src_c: "Planet | None" = None
+    ships_c: int = 0
+    angle_c: float = 0.0
+    eta_c: float = 0.0
 
 
 @dataclass
@@ -161,6 +190,60 @@ def enumerate_reinforce_candidates(
                 )
             )
     return missions
+
+
+def enumerate_rear_push_candidates(
+    my_planets: list,
+    all_planets: list,
+    player: int,
+    attack_cands_by_planet: dict,
+    reserve_of,
+):
+    """後方の安全自惑星から前線自惑星へ艦を流す候補を列挙する。
+
+    source: 全敵惑星への最短距離 > REAR_DISTANCE_THRESHOLD かつ avail >= REAR_MIN_SURPLUS
+    target: attack候補が FRONTIER_MIN_CANDS 件以上あり、source より敵に近い自惑星
+    """
+    enemy_planets = [p for p in all_planets if p.owner not in (player, NEUTRAL_OWNER)]
+    if not enemy_planets:
+        return
+
+    def min_enemy_dist(p):
+        return min(math.hypot(p.x - e.x, p.y - e.y) for e in enemy_planets)
+
+    for src in my_planets:
+        src_enemy_dist = min_enemy_dist(src)
+        if src_enemy_dist <= REAR_DISTANCE_THRESHOLD:
+            continue
+        avail = src.ships - reserve_of(src)
+        if avail < REAR_MIN_SURPLUS:
+            continue
+
+        for tgt in my_planets:
+            if tgt.id == src.id:
+                continue
+            cands = attack_cands_by_planet.get(tgt.id, [])
+            good_cands = [c for c in cands if c[3] > 0]
+            if len(good_cands) < FRONTIER_MIN_CANDS:
+                continue
+            if min_enemy_dist(tgt) >= src_enemy_dist:
+                continue  # src より敵に近くない
+
+            ships = min(avail, max(1, int(src.ships * REAR_PUSH_FRACTION)))
+            my_eta_f = route_eta(src.x, src.y, tgt.x, tgt.y, ships)
+            angle, _ = route_angle_and_distance(src.x, src.y, tgt.x, tgt.y)
+            top_value = good_cands[0][3]
+            value = top_value - my_eta_f * TRAVEL_PENALTY
+            if value <= 0:
+                continue
+            yield ReinforceMission(
+                source_id=src.id,
+                target_id=tgt.id,
+                ships=ships,
+                angle=angle,
+                value=value,
+                my_eta=max(1, int(math.ceil(my_eta_f))),
+            )
 
 
 def _fleet_forward_distance(fleet, planet) -> float:
@@ -366,6 +449,7 @@ def enumerate_candidates(
     my_planet_count: int = 0,
     domination: float = 0.0,
     is_opening: bool = False,
+    concurrent_etas: set[int] | None = None,
 ):
     """自分以外が所有する惑星をインターセプト位置で距離昇順ソートし上位 top_n 件を返す。
 
@@ -542,6 +626,11 @@ def enumerate_candidates(
                 + _urgency
                 + opening_contention_bonus
             )
+        # P8: 同時並行占領ボーナス — 既発射フリートの ETA と近い候補に加点
+        if concurrent_etas and any(
+            abs(my_eta - e) <= CONCURRENT_WINDOW for e in concurrent_etas
+        ):
+            value += CONCURRENT_BONUS
         out.append((t, ships_needed, angle, value, float(my_eta)))
     return out
 
@@ -576,7 +665,12 @@ def classify_defense(
       そうでなければ fall turn 時点の state.ships を敵側兵力とみなし、
         mine.ships 未満なら "doomed"、それ以外は "threatened"。
     timeline=None のときは旧 fleet_heading_to ベース判定 (後方互換)。
+
+    cost/value チェック: "threatened" と判定された場合でも、守備コストが
+    mine.production * HOLD_HORIZON の ABANDON_COST_RATIO 倍を超えるなら "doomed" に格上げ。
     """
+    fall_turn: int | None = None
+
     if timeline is not None:
         fall_turn = first_turn_lost(mine, timeline, player)
         if fall_turn is None:
@@ -585,6 +679,10 @@ def classify_defense(
         enemy_ships = int(state.ships) if state is not None else int(mine.ships) + 1
         reserve = max(0, enemy_ships)
         if mine.ships < reserve:
+            return "doomed", reserve, fall_turn
+        # cost/value チェック: 守備コストが生産価値の ABANDON_COST_RATIO 倍を超えるなら放棄
+        defense_value = mine.production * HOLD_HORIZON
+        if mine.production > 0 and reserve > defense_value * ABANDON_COST_RATIO:
             return "doomed", reserve, fall_turn
         return "threatened", reserve, fall_turn
 
@@ -607,6 +705,7 @@ def enumerate_support_candidates(
     timelines: dict[int, list[PlanetState]] | None = None,
     planned: dict | None = None,
     remaining_turns: int | None = None,
+    current_turn: int = 0,
 ) -> list:
     """threatened / doomed な他の自惑星への着地補強候補。
 
@@ -638,6 +737,10 @@ def enumerate_support_candidates(
         # 現在位置狙いで良い (fall_turn は小さく、軌道移動は無視できる)。
         my_eta = route_eta(my_planet.x, my_planet.y, ally.x, ally.y, max(1, my_planet.ships))
         if my_eta > fall_turn:
+            continue
+        # JIT: 出発すべきターンになるまでスキップ
+        dispatch_turn = fall_turn - int(math.ceil(my_eta)) - JIT_MARGIN
+        if current_turn < dispatch_turn:
             continue
         if segment_hits_sun(my_planet.x, my_planet.y, ally.x, ally.y):
             continue
@@ -821,6 +924,99 @@ def enumerate_snipe_candidates(
     return out
 
 
+def enumerate_post_launch_snipe_candidates(
+    my_planet: Planet,
+    all_planets,
+    fleets,
+    player: int,
+    angular_velocity: float = 0.0,
+    planned: dict | None = None,
+    remaining_turns: int | None = None,
+    timelines: dict | None = None,
+) -> list:
+    """敵が出撃直後に手薄になった惑星へのスナイプ候補を列挙する。
+
+    fleets 内の enemy fleet の from_planet_id 惑星が SNIPE_THIN_THRESHOLD 未満なら
+    通常の attack 候補と同じ value 式 + SNIPE_URGENCY_BONUS で候補を生成する。
+    全モード (ahead/neutral/behind) で適用。
+    """
+    from .utils import CENTER
+
+    if planned is None:
+        planned = {}
+
+    planet_map = {p.id: p for p in all_planets}
+    seen_origins: set[int] = set()
+    out = []
+
+    for f in fleets:
+        if f.owner == player:
+            continue
+        origin_id = f.from_planet_id
+        if origin_id in seen_origins:
+            continue
+        origin = planet_map.get(origin_id)
+        if origin is None or origin.owner == player:
+            continue
+        if origin.ships >= SNIPE_THIN_THRESHOLD:
+            continue
+        seen_origins.add(origin_id)
+
+        r = math.hypot(origin.x - CENTER, origin.y - CENTER)
+        is_orbital = angular_velocity != 0.0 and (r + origin.radius < 50)
+        if is_orbital:
+            ships_approx = ships_budget(origin)
+            ix, iy, my_eta = intercept_pos(
+                my_planet.x, my_planet.y, ships_approx, origin, angular_velocity
+            )
+        else:
+            ix, iy = origin.x, origin.y
+            ships_approx = ships_budget(origin)
+            my_eta = route_eta(my_planet.x, my_planet.y, ix, iy, ships_approx)
+
+        if segment_hits_sun(my_planet.x, my_planet.y, ix, iy):
+            continue
+        if remaining_turns is not None and my_eta > remaining_turns:
+            continue
+
+        already_sent = planned.get(origin.id, 0)
+        if timelines and origin.id in timelines:
+            ships_needed = ships_needed_to_capture_at(
+                origin, timelines[origin.id], player, int(math.ceil(my_eta))
+            )
+            ships_needed = max(0, ships_needed - already_sent)
+        else:
+            ships_needed = ships_budget(origin, my_eta=my_eta, already_sent=already_sent)
+        if ships_needed <= 0:
+            continue
+
+        angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
+        # 出撃元フリートは origin から出発済みのため rival として除外する
+        fleets_excl = [f2 for f2 in fleets if f2.from_planet_id != origin_id]
+        rival_eta = compute_rival_eta(origin, player, fleets_excl, all_planets, angular_velocity)
+        # remaining_turns=None のとき target_value が HOLD_HORIZON(20) に縮退するのを防ぐ
+        _rt = remaining_turns if remaining_turns is not None else int(ASSET_HORIZON)
+        value = (
+            target_value(
+                my_planet,
+                ix,
+                iy,
+                origin.production,
+                rival_eta,
+                ships_needed,
+                my_eta,
+                target_owner=origin.owner,
+                remaining_turns=_rt,
+            )
+            + SNIPE_URGENCY_BONUS
+        )
+        if value <= 0:
+            continue
+        out.append((origin, ships_needed, angle, value, float(my_eta)))
+
+    return out
+
+
 def enumerate_swarm_candidates(
     my_planets,
     all_planets,
@@ -899,6 +1095,9 @@ def enumerate_swarm_candidates(
                 if needed <= 0:
                     continue
 
+                # overcap: 敵の割り込み増援に対して安全マージンを確保
+                needed = int(math.ceil(needed * OVERCAP_FACTOR))
+
                 reserve_a = (
                     defense_status[src_a.id][1]
                     if defense_status and src_a.id in defense_status
@@ -913,7 +1112,50 @@ def enumerate_swarm_candidates(
                 avail_b = max(0, src_b.ships - reserve_b)
 
                 if avail_a + avail_b < needed:
-                    continue
+                    # 3惑星目を探す (ETA 近いもの最大3件)
+                    found_triple = False
+                    for k in range(j + 1, min(j + 4, len(src_info))):
+                        src_c_obj, eta_c, angle_c = src_info[k]
+                        if eta_c - eta_a > eta_sync_tolerance:
+                            break
+                        reserve_c = (
+                            defense_status[src_c_obj.id][1]
+                            if defense_status and src_c_obj.id in defense_status
+                            else 0
+                        )
+                        avail_c = max(0, src_c_obj.ships - reserve_c)
+                        if avail_a + avail_b + avail_c < needed:
+                            continue
+                        if avail_c < 1:
+                            continue
+                        total_avail = avail_a + avail_b + avail_c
+                        ships_a3 = max(1, min(avail_a, math.ceil(needed * avail_a / total_avail)))
+                        ships_b3 = max(1, min(avail_b, needed - ships_a3))
+                        ships_c3 = needed - ships_a3 - ships_b3
+                        if ships_b3 <= 0 or ships_c3 <= 0 or ships_c3 > avail_c:
+                            continue
+                        joint_eta3 = max(eta_a, eta_b, eta_c)
+                        value3 = target_value(
+                            src_a, target.x, target.y, target.production, rival_eta,
+                            ships_a3 + ships_b3 + ships_c3, joint_eta3,
+                            target_owner=target.owner, mode=mode,
+                            remaining_turns=remaining_turns, is_orbital=is_orbital, orbital_radius=r,
+                        )
+                        if value3 <= 0:
+                            continue
+                        missions.append(SwarmMission(
+                            target=target,
+                            src_a=src_a, ships_a=ships_a3, angle_a=angle_a, eta_a=eta_a,
+                            src_b=src_b, ships_b=ships_b3, angle_b=angle_b, eta_b=eta_b,
+                            value=value3,
+                            src_c=src_c_obj, ships_c=ships_c3, angle_c=angle_c, eta_c=eta_c,
+                        ))
+                        found_triple = True
+                        break
+                    if not found_triple:
+                        continue
+                    continue  # 2源不足ペアは3源で処理済み(または断念)のためスキップ
+
                 if avail_a < 1 or avail_b < 1:
                     continue
 

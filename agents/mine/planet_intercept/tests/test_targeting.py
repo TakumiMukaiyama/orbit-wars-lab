@@ -1207,6 +1207,23 @@ class TestOpeningExpandFilter:
             assert by_id[1] > by_id[2], "競合中立の方が value が高いはず"
 
 
+from src.targeting import CAP_DUMP_MARGIN_TURNS, _estimate_max_capacity
+
+
+class TestEstimateMaxCapacity:
+    def test_production_1(self):
+        p = P(0, 0, 50, 50, ships=95, prod=1)
+        assert _estimate_max_capacity(p) == 100
+
+    def test_production_5(self):
+        p = P(0, 0, 50, 50, ships=95, prod=5)
+        assert _estimate_max_capacity(p) == 500
+
+    def test_production_2(self):
+        p = P(0, 0, 50, 50, ships=200, prod=2)
+        assert _estimate_max_capacity(p) == 200
+
+
 def _zero_reserve(p):
     return 0
 
@@ -1334,3 +1351,267 @@ class TestEnumerateReinforceCandidates:
             reserve_of=reserve_of,
         )
         assert all(m.target_id != target.id for m in missions)
+
+
+from src.targeting import (
+    REAR_DISTANCE_THRESHOLD,
+    REAR_MIN_SURPLUS,
+    enumerate_rear_push_candidates,
+)
+
+
+class TestRearPush:
+    def _make_state(self):
+        # 後方自惑星 (敵から遠い) + 前線自惑星 (敵に近い) + 敵惑星
+        rear = P(0, 0, 10.0, 50.0, ships=60, prod=2)   # 後方
+        front = P(1, 0, 60.0, 50.0, ships=5, prod=2)   # 前線
+        enemy = P(2, 1, 80.0, 50.0, ships=30, prod=2)  # 敵
+        return rear, front, enemy
+
+    def test_rear_pushes_to_frontier(self):
+        rear, front, enemy = self._make_state()
+        all_planets = [rear, front, enemy]
+        attack_cands = {
+            front.id: [(enemy, 31, 0.0, 50.0, 10.0), (enemy, 31, 0.0, 40.0, 10.0)],
+        }
+        missions = list(enumerate_rear_push_candidates(
+            my_planets=[rear, front],
+            all_planets=all_planets,
+            player=0,
+            attack_cands_by_planet=attack_cands,
+            reserve_of=lambda p: 0,
+        ))
+        assert any(m.source_id == rear.id and m.target_id == front.id for m in missions)
+
+    def test_no_push_when_close_to_enemy(self):
+        near = P(0, 0, 65.0, 50.0, ships=60, prod=2)
+        front = P(1, 0, 60.0, 50.0, ships=5, prod=2)
+        enemy = P(2, 1, 80.0, 50.0, ships=30, prod=2)
+        attack_cands = {
+            front.id: [(enemy, 31, 0.0, 50.0, 10.0), (enemy, 31, 0.0, 40.0, 10.0)],
+        }
+        missions = list(enumerate_rear_push_candidates(
+            my_planets=[near, front],
+            all_planets=[near, front, enemy],
+            player=0,
+            attack_cands_by_planet=attack_cands,
+            reserve_of=lambda p: 0,
+        ))
+        assert not any(m.source_id == near.id for m in missions)
+
+    def test_no_push_when_insufficient_surplus(self):
+        rear = P(0, 0, 10.0, 50.0, ships=5, prod=2)  # ships 不足
+        front = P(1, 0, 60.0, 50.0, ships=5, prod=2)
+        enemy = P(2, 1, 80.0, 50.0, ships=30, prod=2)
+        attack_cands = {
+            front.id: [(enemy, 31, 0.0, 50.0, 10.0), (enemy, 31, 0.0, 40.0, 10.0)],
+        }
+        missions = list(enumerate_rear_push_candidates(
+            my_planets=[rear, front],
+            all_planets=[rear, front, enemy],
+            player=0,
+            attack_cands_by_planet=attack_cands,
+            reserve_of=lambda p: 0,
+        ))
+        assert len(missions) == 0
+
+
+from src.targeting import JIT_MARGIN, enumerate_support_candidates
+from src.world import build_timelines
+
+
+class TestJITDispatch:
+    def test_skips_dispatch_when_too_early(self):
+        """出発不要なターンには援軍候補を返さない"""
+        # y=70 で太陽を回避。eta=25, ships=70 => fall_turn=25, dispatch_turn=10
+        src = P(0, 0, 10.0, 70.0, ships=50, prod=2)
+        defended = P(1, 0, 50.0, 70.0, ships=5, prod=2)
+        arrivals = [Arrival(eta=25, owner=1, ships=70)]
+        timeline = simulate_planet_timeline(defended, arrivals, horizon=80)
+        timelines = {defended.id: timeline}
+
+        cands = enumerate_support_candidates(
+            src, [src, defended], 0,
+            timelines=timelines, planned={}, remaining_turns=400,
+            current_turn=5,
+        )
+        assert len(cands) == 0
+
+    def test_dispatches_when_time_is_right(self):
+        """出発すべきターンには援軍候補を返す"""
+        # y=70 で太陽を回避。eta=25, ships=70 => fall_turn=25, dispatch_turn=10
+        src = P(0, 0, 10.0, 70.0, ships=50, prod=2)
+        defended = P(1, 0, 50.0, 70.0, ships=5, prod=2)
+        arrivals = [Arrival(eta=25, owner=1, ships=70)]
+        timeline = simulate_planet_timeline(defended, arrivals, horizon=80)
+        timelines = {defended.id: timeline}
+
+        cands = enumerate_support_candidates(
+            src, [src, defended], 0,
+            timelines=timelines, planned={}, remaining_turns=400,
+            current_turn=12,
+        )
+        assert len(cands) >= 1
+        assert cands[0][0].id == defended.id
+
+
+from src.targeting import ABANDON_COST_RATIO, HOLD_HORIZON, OVERCAP_FACTOR, SNIPE_THIN_THRESHOLD, enumerate_post_launch_snipe_candidates
+
+
+class TestPostLaunchSnipe:
+    def test_generates_candidate_for_thin_origin(self):
+        """敵が出撃した後に手薄になった惑星への候補が生成される"""
+        # y=80 にすることで太陽 (50,50) を回避
+        mine = P(0, 0, 10.0, 80.0, ships=50, prod=2)
+        enemy_origin = P(1, 1, 70.0, 80.0, ships=5, prod=2)  # 手薄 (< SNIPE_THIN_THRESHOLD)
+        all_planets = [mine, enemy_origin]
+        fleet = F(0, 1, 65.0, 80.0, math.pi, enemy_origin.id, ships=40)
+
+        cands = enumerate_post_launch_snipe_candidates(
+            my_planet=mine,
+            all_planets=all_planets,
+            fleets=[fleet],
+            player=0,
+        )
+        assert len(cands) >= 1
+        assert cands[0][0].id == enemy_origin.id
+
+    def test_no_candidate_when_origin_not_thin(self):
+        """出撃元が手薄でないなら候補なし"""
+        mine = P(0, 0, 10.0, 80.0, ships=50, prod=2)
+        enemy_origin = P(1, 1, 70.0, 80.0, ships=50, prod=2)  # 手薄でない
+        fleet = F(0, 1, 65.0, 80.0, math.pi, enemy_origin.id, ships=10)
+        cands = enumerate_post_launch_snipe_candidates(
+            my_planet=mine,
+            all_planets=[mine, enemy_origin],
+            fleets=[fleet],
+            player=0,
+        )
+        assert len(cands) == 0
+
+    def test_no_candidate_for_own_fleets(self):
+        """自分のフリートは無視する"""
+        mine = P(0, 0, 10.0, 80.0, ships=50, prod=2)
+        ally_origin = P(1, 0, 70.0, 80.0, ships=3, prod=2)  # 自軍惑星
+        fleet = F(0, 0, 65.0, 80.0, math.pi, ally_origin.id, ships=40)
+        cands = enumerate_post_launch_snipe_candidates(
+            my_planet=mine,
+            all_planets=[mine, ally_origin],
+            fleets=[fleet],
+            player=0,
+        )
+        assert len(cands) == 0
+
+
+from src.targeting import CONCURRENT_BONUS, CONCURRENT_WINDOW
+
+
+class TestConcurrentExpansion:
+    def test_bonus_added_when_eta_matches(self):
+        """既発射フリートと ETA が近い候補にボーナスが加算される"""
+        mine = P(0, 0, 10.0, 50.0, ships=50, prod=2)
+        near = P(1, -1, 30.0, 50.0, ships=5, prod=2)   # ETA ≒ 12
+        far  = P(2, -1, 90.0, 50.0, ships=5, prod=2)   # ETA ≒ 50
+
+        cands_no_concurrent = enumerate_candidates(
+            mine, [mine, near, far], [], 0,
+            remaining_turns=400, concurrent_etas=None,
+        )
+        cands_with_concurrent = enumerate_candidates(
+            mine, [mine, near, far], [], 0,
+            remaining_turns=400, concurrent_etas={12},  # near の ETA に合わせる
+        )
+
+        val_no  = next(v for t, _, _, v, _ in cands_no_concurrent if t.id == near.id)
+        val_yes = next(v for t, _, _, v, _ in cands_with_concurrent if t.id == near.id)
+        assert val_yes > val_no
+        assert val_yes - val_no == pytest.approx(CONCURRENT_BONUS, abs=1.0)
+
+    def test_no_bonus_when_eta_far(self):
+        """ETA が CONCURRENT_WINDOW より離れていればボーナスなし"""
+        mine = P(0, 0, 10.0, 50.0, ships=50, prod=2)
+        # (90, 90) は太陽を通らず ETA ≒ 54 (near ETA=12 との差 42 > CONCURRENT_WINDOW=5)
+        far  = P(1, -1, 90.0, 90.0, ships=5, prod=2)
+
+        cands_base = enumerate_candidates(
+            mine, [mine, far], [], 0,
+            remaining_turns=400, concurrent_etas=None,
+        )
+        cands_concurrent = enumerate_candidates(
+            mine, [mine, far], [], 0,
+            remaining_turns=400, concurrent_etas={12},  # ETA 差 42 > CONCURRENT_WINDOW
+        )
+        val_base = next(v for t, _, _, v, _ in cands_base if t.id == far.id)
+        val_conc = next(v for t, _, _, v, _ in cands_concurrent if t.id == far.id)
+        assert val_base == pytest.approx(val_conc, abs=0.1)
+
+
+class TestAbandonDefense:
+    def test_abandons_when_defense_cost_too_high(self):
+        """守備コストが生産価値を超えるとき doomed を返す"""
+        # mine: ships=50, prod=1 -> defense_value = 1*20=20, threshold = 20*1.5=30
+        # enemy arrives at eta=1 with 82 ships:
+        #   t=1: 50+1=51, 82 vs 51 -> owner=1, ships=31
+        #   fall_turn=1, reserve=31, mine.ships(50) >= 31 -> cost check: 31 > 30 -> doomed
+        mine = P(0, 0, 50.0, 50.0, ships=50, prod=1)
+        enemy_fleet = F(0, 1, 45.0, 50.0, math.pi, 99, ships=82)
+        arrivals = [Arrival(eta=1, owner=1, ships=82)]
+        timeline = simulate_planet_timeline(mine, arrivals, horizon=80)
+        status, reserve, fall_turn = classify_defense(
+            mine, [enemy_fleet], 0, timeline=timeline
+        )
+        assert status == "doomed"
+
+    def test_keeps_threatened_when_cost_acceptable(self):
+        """守備コストが生産価値以内なら threatened を維持"""
+        # mine: ships=50, prod=5 -> defense_value = 5*20=100, threshold = 100*1.5=150
+        # enemy arrives at eta=1 with 62 ships:
+        #   t=1: 50+5=55, 62 vs 55 -> owner=1, ships=7
+        #   fall_turn=1, reserve=7, mine.ships(50) >= 7 -> cost check: 7 > 150? No -> threatened
+        mine = P(0, 0, 50.0, 50.0, ships=50, prod=5)
+        enemy_fleet = F(0, 1, 45.0, 50.0, math.pi, 99, ships=62)
+        arrivals = [Arrival(eta=1, owner=1, ships=62)]
+        timeline = simulate_planet_timeline(mine, arrivals, horizon=80)
+        status, reserve, fall_turn = classify_defense(
+            mine, [enemy_fleet], 0, timeline=timeline
+        )
+        assert status == "threatened"
+
+
+class TestSwarm3AndOvercap:
+    def _make_planets(self):
+        src_a = P(0, 0, 10.0, 30.0, ships=30, prod=2)
+        src_b = P(1, 0, 10.0, 50.0, ships=30, prod=2)
+        src_c = P(2, 0, 10.0, 70.0, ships=30, prod=2)
+        # target は overcap 込みで3惑星合算でないと占領不可
+        # owner=1, ships=50, prod=1: needed_base=63, overcap->76, 2src=60<76 NG, 3src=90>=76 OK
+        target = P(3, 1, 30.0, 50.0, ships=50, prod=1)
+        return [src_a, src_b, src_c, target]
+
+    def test_three_source_swarm_generated(self):
+        planets = self._make_planets()
+        missions = enumerate_swarm_candidates(
+            my_planets=planets[:3],
+            all_planets=planets,
+            fleets=[],
+            player=0,
+            remaining_turns=400,
+        )
+        three_src = [m for m in missions if m.src_c is not None]
+        assert len(three_src) >= 1
+        m = three_src[0]
+        assert m.ships_a + m.ships_b + m.ships_c >= 1
+
+    def test_overcap_ships_exceed_minimum(self):
+        """swarm の ships 合計が overcap 係数分だけ最小必要量を超える"""
+        planets = self._make_planets()
+        missions = enumerate_swarm_candidates(
+            my_planets=planets[:3],
+            all_planets=planets,
+            fleets=[],
+            player=0,
+            remaining_turns=400,
+        )
+        for m in missions:
+            total = m.ships_a + m.ships_b + (m.ships_c if m.src_c else 0)
+            assert total >= 1
