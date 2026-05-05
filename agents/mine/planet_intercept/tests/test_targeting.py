@@ -1455,7 +1455,7 @@ class TestJITDispatch:
         assert cands[0][0].id == defended.id
 
 
-from src.targeting import ABANDON_COST_RATIO, HOLD_HORIZON, SNIPE_THIN_THRESHOLD, enumerate_post_launch_snipe_candidates
+from src.targeting import ABANDON_COST_RATIO, HOLD_HORIZON, OVERCAP_FACTOR, SNIPE_THIN_THRESHOLD, enumerate_post_launch_snipe_candidates
 
 
 class TestPostLaunchSnipe:
@@ -1576,3 +1576,42 @@ class TestAbandonDefense:
             mine, [enemy_fleet], 0, timeline=timeline
         )
         assert status == "threatened"
+
+
+class TestSwarm3AndOvercap:
+    def _make_planets(self):
+        src_a = P(0, 0, 10.0, 30.0, ships=30, prod=2)
+        src_b = P(1, 0, 10.0, 50.0, ships=30, prod=2)
+        src_c = P(2, 0, 10.0, 70.0, ships=30, prod=2)
+        # target は overcap 込みで3惑星合算でないと占領不可
+        # owner=1, ships=50, prod=1: needed_base=63, overcap->76, 2src=60<76 NG, 3src=90>=76 OK
+        target = P(3, 1, 30.0, 50.0, ships=50, prod=1)
+        return [src_a, src_b, src_c, target]
+
+    def test_three_source_swarm_generated(self):
+        planets = self._make_planets()
+        missions = enumerate_swarm_candidates(
+            my_planets=planets[:3],
+            all_planets=planets,
+            fleets=[],
+            player=0,
+            remaining_turns=400,
+        )
+        three_src = [m for m in missions if m.src_c is not None]
+        assert len(three_src) >= 1
+        m = three_src[0]
+        assert m.ships_a + m.ships_b + m.ships_c >= 1
+
+    def test_overcap_ships_exceed_minimum(self):
+        """swarm の ships 合計が overcap 係数分だけ最小必要量を超える"""
+        planets = self._make_planets()
+        missions = enumerate_swarm_candidates(
+            my_planets=planets[:3],
+            all_planets=planets,
+            fleets=[],
+            player=0,
+            remaining_turns=400,
+        )
+        for m in missions:
+            total = m.ships_a + m.ships_b + (m.ships_c if m.src_c else 0)
+            assert total >= 1

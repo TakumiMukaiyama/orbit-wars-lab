@@ -78,6 +78,8 @@ _CAPACITY_PER_PRODUCTION = 100
 
 JIT_MARGIN = 2
 
+OVERCAP_FACTOR = 1.2
+
 # P8: 同時並行占領ボーナス — 既発射フリートの ETA と近い候補に加点
 CONCURRENT_WINDOW = 5
 CONCURRENT_BONUS = 20.0
@@ -105,6 +107,10 @@ class SwarmMission:
     angle_b: float
     eta_b: float
     value: float
+    src_c: "Planet | None" = None
+    ships_c: int = 0
+    angle_c: float = 0.0
+    eta_c: float = 0.0
 
 
 @dataclass
@@ -1067,6 +1073,9 @@ def enumerate_swarm_candidates(
                 if needed <= 0:
                     continue
 
+                # overcap: 敵の割り込み増援に対して安全マージンを確保
+                needed = int(math.ceil(needed * OVERCAP_FACTOR))
+
                 reserve_a = (
                     defense_status[src_a.id][1]
                     if defense_status and src_a.id in defense_status
@@ -1081,7 +1090,53 @@ def enumerate_swarm_candidates(
                 avail_b = max(0, src_b.ships - reserve_b)
 
                 if avail_a + avail_b < needed:
-                    continue
+                    # 3惑星目を探す (ETA 近いもの最大3件)
+                    found_triple = False
+                    for k in range(j + 1, min(j + 4, len(src_info))):
+                        src_c_obj, eta_c, angle_c = src_info[k]
+                        if eta_c - eta_a > eta_sync_tolerance:
+                            break
+                        reserve_c = (
+                            defense_status[src_c_obj.id][1]
+                            if defense_status and src_c_obj.id in defense_status
+                            else 0
+                        )
+                        avail_c = max(0, src_c_obj.ships - reserve_c)
+                        if avail_a + avail_b + avail_c < needed:
+                            continue
+                        if avail_c < 1:
+                            continue
+                        total_avail = avail_a + avail_b + avail_c
+                        ships_a3 = max(1, min(avail_a, math.ceil(needed * avail_a / total_avail)))
+                        ships_b3 = max(1, min(avail_b, math.ceil(needed * avail_b / total_avail)))
+                        ships_c3 = needed - ships_a3 - ships_b3
+                        if ships_c3 <= 0 or ships_c3 > avail_c:
+                            ships_c3 = min(avail_c, needed - ships_a3 - 1)
+                            ships_b3 = needed - ships_a3 - ships_c3
+                        if ships_b3 <= 0 or ships_c3 <= 0:
+                            continue
+                        joint_eta3 = max(eta_a, eta_b, eta_c)
+                        value3 = target_value(
+                            src_a, target.x, target.y, target.production, rival_eta,
+                            ships_a3 + ships_b3 + ships_c3, joint_eta3,
+                            target_owner=target.owner, mode=mode,
+                            remaining_turns=remaining_turns, is_orbital=is_orbital, orbital_radius=r,
+                        )
+                        if value3 <= 0:
+                            continue
+                        missions.append(SwarmMission(
+                            target=target,
+                            src_a=src_a, ships_a=ships_a3, angle_a=angle_a, eta_a=eta_a,
+                            src_b=src_b, ships_b=ships_b3, angle_b=angle_b, eta_b=eta_b,
+                            value=value3,
+                            src_c=src_c_obj, ships_c=ships_c3, angle_c=angle_c, eta_c=eta_c,
+                        ))
+                        found_triple = True
+                        break
+                    if not found_triple:
+                        continue
+                    continue  # 3惑星版を追加したので2惑星版はスキップ
+
                 if avail_a < 1 or avail_b < 1:
                     continue
 

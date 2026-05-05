@@ -22,6 +22,7 @@ from .targeting import (
     enumerate_reinforce_candidates,
     enumerate_snipe_candidates,
     enumerate_support_candidates,
+    enumerate_swarm_candidates,
     select_move,
 )
 from .world import apply_planned_arrival
@@ -286,6 +287,48 @@ class HeuristicPolicy(Policy):
                 self.last_chosen.append(chosen_ships)
 
             moves.append([mine.id, angle, ships])
+
+        # swarm パス
+        swarm_missions = enumerate_swarm_candidates(
+            my_planets=gs.my_planets,
+            all_planets=gs.planets,
+            fleets=gs.fleets,
+            player=gs.player,
+            angular_velocity=gs.angular_velocity,
+            planned=planned,
+            fired_sources=fired_sources,
+            defense_status={pid: (s, r, ft) for pid, (s, r, ft) in gs.defense_status.items()},
+            mode=gs.mode,
+            remaining_turns=gs.remaining_turns,
+            timelines=gs.timelines,
+        )
+        swarm_fired_sources: set[int] = set()
+        all_fired = fired_sources
+        for sm in sorted(swarm_missions, key=lambda m: -m.value):
+            if sm.src_a.id in all_fired or sm.src_a.id in swarm_fired_sources:
+                continue
+            if sm.src_b.id in all_fired or sm.src_b.id in swarm_fired_sources:
+                continue
+            if sm.src_c is not None and (
+                sm.src_c.id in all_fired or sm.src_c.id in swarm_fired_sources
+            ):
+                continue
+            moves.append([sm.src_a.id, sm.angle_a, sm.ships_a])
+            moves.append([sm.src_b.id, sm.angle_b, sm.ships_b])
+            if sm.src_c is not None and sm.ships_c > 0:
+                moves.append([sm.src_c.id, sm.angle_c, sm.ships_c])
+            eta_int = max(1, int(math.ceil(max(sm.eta_a, sm.eta_b, sm.eta_c if sm.src_c else 0))))
+            apply_planned_arrival(
+                gs.ledger, gs.timelines, gs.planets,
+                target_id=sm.target.id, owner=gs.player,
+                ships=sm.ships_a + sm.ships_b + (sm.ships_c if sm.src_c else 0),
+                eta=eta_int, horizon=gs.horizon,
+            )
+            planned[sm.target.id] = planned.get(sm.target.id, 0) + sm.ships_a + sm.ships_b + (sm.ships_c if sm.src_c else 0)
+            swarm_fired_sources.add(sm.src_a.id)
+            swarm_fired_sources.add(sm.src_b.id)
+            if sm.src_c is not None:
+                swarm_fired_sources.add(sm.src_c.id)
 
         # reinforce パス
         reinforce_missions = enumerate_reinforce_candidates(
