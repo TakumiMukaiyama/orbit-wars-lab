@@ -109,7 +109,6 @@ class HeuristicPolicy(Policy):
                 my_planet_count=n,
                 domination=gs.domination,
                 is_opening=gs.is_opening,
-                concurrent_etas=concurrent_etas,
             )
 
         moves = []
@@ -118,7 +117,7 @@ class HeuristicPolicy(Policy):
 
             # 容量ダンプ: 生産停止を防ぐため上限手前で強制射出
             max_cap = _estimate_max_capacity(mine)
-            if mine.ships >= max_cap - mine.production * CAP_DUMP_MARGIN_TURNS:
+            if max_cap > 0 and mine.ships >= max_cap - mine.production * CAP_DUMP_MARGIN_TURNS:
                 attack_cands = attack_cands_by_planet.get(mine.id, [])
                 dump_result = _pick_dump_target(mine, gs.planets, attack_cands, gs.player)
                 if dump_result is not None:
