@@ -1,8 +1,12 @@
 """目標価値計算、艦船予算、候補手列挙。
 
-敵惑星: value = production * max(0, rival_eta - my_eta) - ships_to_send
-中立惑星: value = production * HOLD_HORIZON - ships_to_send - my_eta * TRAVEL_PENALTY
-        (ただし rival が先着する脅威下では敵式に縮退)
+ROI ベース value (ルール①: Recovery Time 最小化):
+    recovery_time = ships_to_send / production + my_eta
+    value = ROI_SCALE / recovery_time
+
+中立・敵惑星ともに同一式を使う。recovery_time は「投資した艦船を再生産で
+回収するまでの時間 + 移動時間」を表し、これが小さいほど ROI が高い。
+focus_bonus と concurrent_bonus は「同時着弾誘導」(ルール⑧) のため加算する。
 """
 
 import math
@@ -19,7 +23,6 @@ from .utils import Planet, distance, fleet_speed
 from .world import (
     PlanetState,
     estimate_hold_turns,
-    estimate_snipe_outcome,
     first_turn_lost,
     ships_needed_to_capture_at,
     state_at,
@@ -27,77 +30,57 @@ from .world import (
 
 NEUTRAL_OWNER = -1
 
-HOLD_HORIZON = 20.0
-HOLD_HORIZON_BEHIND = 4.0
-THREAT_MARGIN = 0.0
+# ROI スケール係数。recovery_time = ships/prod + my_eta は典型的に 5〜30 turn。
+# value = ROI_SCALE / recovery_time が intercept/support の production*HOLD_HORIZON
+# (20〜100) より優先される必要があるため、ROI_SCALE=500 で recovery=10 のとき
+# value=50、recovery=5 のとき value=100 となるよう設定。
+ROI_SCALE = 500.0
+
+# 同時着弾誘導 (ルール⑧)。
+FOCUS_BONUS_PER_PLANNED_SHIP = 0.5  # planned 1 ship ごとに value 加算
+CONCURRENT_WINDOW = 5  # 既発射 ETA との許容差 (turns)
+CONCURRENT_BONUS = 20.0  # window 内なら value に加算
+
+# 移動中の艦を遊兵として扱うペナルティ (reinforce/rear_push/intercept/support 用)。
+# attack candidate (target_value) 内では ROI 式の分母に my_eta*production として
+# 自然に組み込まれているので、これらの定数は補助 missions のみで使う。
 TRAVEL_PENALTY = 0.15
-TRAVEL_PENALTY_QUAD = 0.003
+
+# 補助 missions (support/intercept/snipe) で「占領後の生産期待値」を
+# 算出するための horizon。ROI スケール (target_value * ROI_SCALE) と
+# 同じスケールに揃うよう production * HOLD_HORIZON を使う。
+HOLD_HORIZON = 20.0
 ASSET_HORIZON = 120.0
-ORBITAL_OPENING_TURNS = 160
-INNER_ORBITAL_RADIUS = 34.0
-INNER_ORBITAL_BONUS = 55.0
-STATIC_HIGH_PROD_BONUS = 30.0
 
-# P8: 序盤 production^2 urgency — 開幕の高生産惑星争奪を積極化
-# elapsed が 0 のとき production^2 * K のボーナスを付与し、TURNS ターンで線形減衰→0
-PROD_URGENCY_K = 3.0
-PROD_URGENCY_TURNS = 100
-
-# P5: 中央性ボーナス — 盤面中心に近いほど加点 (右寄り閉塞の回避)
-CENTRAL_REF_RADIUS = 35.0  # この距離でボーナス 0
-CENTRAL_BONUS_MAX = 40.0  # 中心 (r=0) での最大加点
-CENTRAL_OPENING_TURNS = 200  # 序盤〜中盤のみ適用 (後半は不要)
-
-# P2: 過拡張ペナルティ — 勝敗拮抗時に広げすぎた場合の中立 value 減衰
-OVEREXTEND_MIN_PLANETS = 6  # これ未満なら抑制しない (序盤は広げる)
-OVEREXTEND_DOM_WINDOW = 0.15  # |dom| < これ = 拮抗
-OVEREXTEND_DECAY_PER_PLANET = 0.08  # 惑星 1 個超過ごとに 8% 減衰
-OVEREXTEND_FLOOR = 0.4  # factor の下限
-
-# P3: 集中攻撃 — 既に別惑星が planned した target への追加加点
-FOCUS_BONUS_PER_PLANNED_SHIP = 0.5  # planned 1 ship ごとに value +0.5
-
-# P4: 敵高生産地フィルタ — top_n で切られた敵高生産地を別枠で救済
-HIGH_PROD_THRESHOLD = 4  # production >= この値を「高生産」とみなす
-HIGH_PROD_RESERVE = 4  # 別枠で追加する最大数
-
-BEHIND_THRESHOLD = -0.3
-AHEAD_THRESHOLD = 0.3
-
+# 後方→前線の輸送 (ルール⑥)
 REAR_DISTANCE_THRESHOLD = 40.0
 REAR_MIN_SURPLUS = 20
 REAR_PUSH_FRACTION = 0.5
 FRONTIER_MIN_CANDS = 2
 
-SNIPE_MIN_HOLD = 5  # hold_turns がこれ未満のとき SNIPE_HOLD_PENALTY を加算
 ABANDON_COST_RATIO = 1.5
-SNIPE_HOLD_PENALTY = 30.0  # 短命 snipe に対するペナルティ
 
+# 出撃元スナイプ (ルール⑤)
 SNIPE_THIN_THRESHOLD = 15
 SNIPE_URGENCY_BONUS = 30.0
 
-ETA_SYNC_TOLERANCE = 8  # max ETA difference (turns) between swarm sources (P3 緩和: 3→8)
+# 同期マルチ着弾 swarm (ルール⑧)
+ETA_SYNC_TOLERANCE = 8
 
+# Cap 回避 (ルール⑦)
 CAP_DUMP_MARGIN_TURNS = 10
 _CAPACITY_PER_PRODUCTION = 100
-
-JIT_MARGIN = 2
-
 OVERCAP_FACTOR = 1.2
 
-# P8: 同時並行占領ボーナス — 既発射フリートの ETA と近い候補に加点
-CONCURRENT_WINDOW = 5
-CONCURRENT_BONUS = 20.0
+# JIT 防衛 (ルール④)
+JIT_MARGIN = 2
+
+# 中立 expand 競合フィルタ用 (ROI*ROI_SCALE スケール)
+CONTENTION_BONUS_MAX = 30.0  # opp_eta が eta に近づくほど加算される最大ボーナス
 
 
 def _estimate_max_capacity(planet: "Planet") -> int:
     return planet.production * _CAPACITY_PER_PRODUCTION
-
-
-# P7: Opening Expand 改善
-OPENING_TURNS = 40  # opening phase の長さ (ターン数)
-MAX_EXPAND_PER_TURN = 2  # 1 ターンあたり expand 発射上限
-CONTENTION_BONUS_MAX = 60.0  # opp_eta が eta に近づくほど加算される最大ボーナス
 
 
 @dataclass
@@ -334,37 +317,6 @@ def compute_rival_eta(
     return min(per.values()) if per else math.inf
 
 
-def compute_domination(my_total: int, enemy_total: int) -> float:
-    """domination スコア: (my - enemy) / (my + enemy)。範囲 [-1, 1]。"""
-    total = my_total + enemy_total
-    if total == 0:
-        return 0.0
-    return (my_total - enemy_total) / total
-
-
-def _overextend_factor(my_planet_count: int, domination: float) -> float:
-    """P2: 過拡張ペナルティの乗数 (中立獲得の value 減衰)。
-
-    条件: 惑星数 >= OVEREXTEND_MIN_PLANETS かつ dom が拮抗域 (|dom| < WINDOW) のとき減衰。
-    勝敗が大差ついている場面ではこのペナルティは適用しない (勝ち確なら広げて問題ないし、
-    負け確なら一点突破に賭けるため中立価値はそのまま高い方が良い)。
-    """
-    if my_planet_count < OVEREXTEND_MIN_PLANETS:
-        return 1.0
-    if abs(domination) > OVEREXTEND_DOM_WINDOW:
-        return 1.0
-    excess = my_planet_count - OVEREXTEND_MIN_PLANETS
-    return max(OVEREXTEND_FLOOR, 1.0 - excess * OVEREXTEND_DECAY_PER_PLANET)
-
-
-def _prod_urgency_bonus(production: int, elapsed_turns: int) -> float:
-    """P8: 序盤限定の production^2 urgency ボーナス。elapsed=0 で最大、PROD_URGENCY_TURNS で 0。"""
-    if elapsed_turns >= PROD_URGENCY_TURNS:
-        return 0.0
-    decay = 1.0 - elapsed_turns / PROD_URGENCY_TURNS
-    return production * production * PROD_URGENCY_K * decay
-
-
 def target_value(
     mine: Planet,
     target_x: float,
@@ -374,65 +326,31 @@ def target_value(
     ships_to_send: int,
     my_eta: float,
     target_owner: int = NEUTRAL_OWNER,
-    mode: str = "neutral",
     remaining_turns: int | None = None,
     is_orbital: bool = False,
     orbital_radius: float | None = None,
-    my_planet_count: int = 0,
-    domination: float = 0.0,
     focus_planned_ships: int = 0,
 ) -> float:
-    """占領価値。
+    """ROI ベース占領価値 (ルール①: Recovery Time 最小化)。
 
-    中立 (target_owner == NEUTRAL_OWNER):
-        rival 未脅威 -> production * horizon - ships - my_eta * TRAVEL_PENALTY
-        rival 脅威あり -> production * max(0, rival_eta - my_eta) - ships
-    敵惑星 (target_owner != NEUTRAL_OWNER):
-        production * max(0, rival_eta - my_eta) - ships
+    recovery_time = ships_to_send / production + my_eta
+    value = ROI_SCALE / recovery_time + focus_bonus
 
-    P2: 中立 not-threat ブランチに overextend_factor を乗算。
-    P3: focus_planned_ships > 0 のとき FOCUS_BONUS_PER_PLANNED_SHIP * ships を加算。
+    recovery_time は「占領コストを回収するのにかかる時間」+「移動時間」。
+    小さいほど ROI が高く、value も大きくなる。
+
+    rival_eta < my_eta (敵が先着) は呼び出し側でフィルタする前提。ここでは
+    ROI のみで判断する。
     """
-    if remaining_turns is None:
-        asset_horizon = HOLD_HORIZON
-    else:
-        asset_horizon = min(ASSET_HORIZON, max(HOLD_HORIZON, float(remaining_turns)))
-    horizon = HOLD_HORIZON_BEHIND if mode == "behind" else asset_horizon
+    if production <= 0 or ships_to_send <= 0:
+        return 0.0
 
-    threat = math.isfinite(rival_eta) and (rival_eta - my_eta) <= THREAT_MARGIN
-    eta_penalty = my_eta * TRAVEL_PENALTY + my_eta**2 * TRAVEL_PENALTY_QUAD
-    opening_bonus = 0.0
-    elapsed_turns = 500 - remaining_turns if remaining_turns is not None else 500
-    if is_orbital and orbital_radius is not None and elapsed_turns <= ORBITAL_OPENING_TURNS:
-        if orbital_radius <= INNER_ORBITAL_RADIUS:
-            opening_bonus = INNER_ORBITAL_BONUS + production * 8.0
-    elif not is_orbital and production >= 4:
-        opening_bonus = STATIC_HIGH_PROD_BONUS
+    recovery_time = float(ships_to_send) / float(production) + float(my_eta)
+    if recovery_time <= 0.0:
+        return 0.0
 
-    # P5: 中央性ボーナス — 盤面中心に近い惑星ほど加点、序盤のみ有効
-    central_bonus = 0.0
-    if target_owner == NEUTRAL_OWNER and elapsed_turns <= CENTRAL_OPENING_TURNS:
-        r_target = math.hypot(target_x - 50.0, target_y - 50.0)
-        if r_target < CENTRAL_REF_RADIUS:
-            central_bonus = CENTRAL_BONUS_MAX * (1.0 - r_target / CENTRAL_REF_RADIUS)
-
-    # P3: 集中攻撃ボーナス — 既に別 source が planned した target は追加加点
     focus_bonus = FOCUS_BONUS_PER_PLANNED_SHIP * max(0, int(focus_planned_ships))
-
-    if target_owner == NEUTRAL_OWNER:
-        if not threat:
-            # P2: 過拡張ペナルティ (中立 not-threat のみ)
-            factor = _overextend_factor(my_planet_count, domination)
-            base = production * horizon + opening_bonus + central_bonus
-            return base * factor + focus_bonus - ships_to_send - eta_penalty
-        return production * max(0.0, rival_eta - my_eta) - ships_to_send + focus_bonus
-    if threat:
-        gain = 0.0
-    elif math.isfinite(rival_eta):
-        gain = production * min(asset_horizon, max(0.0, rival_eta - my_eta))
-    else:
-        gain = production * asset_horizon
-    return gain + opening_bonus + focus_bonus - ships_to_send - eta_penalty
+    return ROI_SCALE / recovery_time + focus_bonus
 
 
 def enumerate_candidates(
@@ -443,75 +361,35 @@ def enumerate_candidates(
     top_n: int = 16,
     angular_velocity: float = 0.0,
     planned: dict | None = None,
-    mode: str = "neutral",
     remaining_turns: int | None = None,
     timelines: dict[int, list[PlanetState]] | None = None,
-    my_planet_count: int = 0,
-    domination: float = 0.0,
     is_opening: bool = False,
     concurrent_etas: set[int] | None = None,
 ):
-    """自分以外が所有する惑星をインターセプト位置で距離昇順ソートし上位 top_n 件を返す。
+    """ROI 最大の占領候補を列挙する。
 
-    is_opening=True のとき、中立惑星への expand 候補に P7 競合フィルタ + ボーナスを適用する:
+    is_opening=True のとき、中立惑星への expand 候補に競合フィルタを適用する:
     - opp_eta <= my_eta の候補は除外 (先着不可)
     - opp_eta が近いほど value に加点 (先取り価値)
 
-    返り値: list[(target, ships_needed, angle, value)]
+    返り値: list[(target, ships_needed, angle, value, my_eta)]
     """
     from .utils import CENTER
 
     targets = [p for p in all_planets if p.owner != player and p.id != my_planet.id]
-    elapsed_turns = (500 - remaining_turns) if remaining_turns is not None else 500
 
     def sort_key(t):
-        r = math.hypot(t.x - CENTER, t.y - CENTER)
-        is_orbital = angular_velocity != 0.0 and (r + t.radius < 50)
-        cur_dist = distance(my_planet, t)
-        if remaining_turns is not None:
-            elapsed_turns = 500 - remaining_turns
-            inner_bonus = 0.0
-            if is_orbital and elapsed_turns <= ORBITAL_OPENING_TURNS and r <= INNER_ORBITAL_RADIUS:
-                inner_bonus = 120.0
-            static_bonus = 40.0 if (not is_orbital and t.production >= 4) else 0.0
-            # P5: 静止中央惑星を top_n に残りやすくする
-            central_bonus_sort = 0.0
-            if (
-                t.owner == NEUTRAL_OWNER
-                and not is_orbital
-                and elapsed_turns <= CENTRAL_OPENING_TURNS
-                and r < CENTRAL_REF_RADIUS
-            ):
-                central_bonus_sort = CENTRAL_BONUS_MAX * (1.0 - r / CENTRAL_REF_RADIUS)
-            # P8: 序盤 production^2 urgency
-            urgency_sort = _prod_urgency_bonus(t.production, elapsed_turns)
-            priority = (
-                t.production * 25.0 + inner_bonus + static_bonus + central_bonus_sort
-                + urgency_sort - cur_dist
-            )
-            return (-priority, cur_dist)
-        # 静止惑星を先、同グループ内は現在距離でソート
-        return (1 if is_orbital else 0, cur_dist)
+        # production を最優先で上位 top_n に残す (ROI の分子)。距離は補助的。
+        return (-t.production, distance(my_planet, t))
 
     targets.sort(key=sort_key)
-    primary = targets[:top_n]
-    # P4: 敵高生産地を別枠で最大 HIGH_PROD_RESERVE 個追加 (top_n で切られた惑星の救済)
-    primary_ids = {t.id for t in primary}
-    reserved = [
-        t
-        for t in targets[top_n:]
-        if t.owner not in (NEUTRAL_OWNER, player)
-        and t.production >= HIGH_PROD_THRESHOLD
-        and t.id not in primary_ids
-    ][:HIGH_PROD_RESERVE]
-    targets = primary + reserved
+    targets = targets[:top_n]
 
     out = []
     for t in targets:
         r = math.hypot(t.x - CENTER, t.y - CENTER)
         is_orbital = angular_velocity != 0.0 and (r + t.radius < 50)
         if is_orbital:
-            # 近似 ships で ETA を求め、そのあと正確な ships_needed を再計算
             ships_approx = ships_budget(t)
             ix, iy, my_eta = intercept_pos(
                 my_planet.x, my_planet.y, ships_approx, t, angular_velocity
@@ -528,17 +406,14 @@ def enumerate_candidates(
         already_sent = planned.get(t.id, 0) if planned else 0
         if timelines and t.id in timelines:
             base_needed = ships_needed_to_capture_at(
-                t,
-                timelines[t.id],
-                player,
-                int(math.ceil(my_eta)),
+                t, timelines[t.id], player, int(math.ceil(my_eta))
             )
             ships_needed = max(0, base_needed - already_sent)
         else:
             ships_needed = ships_budget(t, my_eta=my_eta, already_sent=already_sent)
         if ships_needed <= 0:
             continue
-        # P0: 実 ships で会合点を再計算 (ships_approx との乖離で狙いが外れる問題の修正)
+        # 実 ships で会合点を再計算 (orbital で ships_approx との乖離があれば)
         if is_orbital and ships_needed != ships_approx:
             ix, iy, my_eta = intercept_pos(
                 my_planet.x, my_planet.y, ships_needed, t, angular_velocity
@@ -549,10 +424,7 @@ def enumerate_candidates(
                 continue
             if timelines and t.id in timelines:
                 base_needed = ships_needed_to_capture_at(
-                    t,
-                    timelines[t.id],
-                    player,
-                    int(math.ceil(my_eta)),
+                    t, timelines[t.id], player, int(math.ceil(my_eta))
                 )
                 ships_needed = max(0, base_needed - already_sent)
             else:
@@ -561,9 +433,26 @@ def enumerate_candidates(
                 continue
         angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
         rival_eta = compute_rival_eta(t, player, fleets, all_planets, angular_velocity)
+
+        # 中立惑星: rival が先着するなら捨てる (取られたら ROI なし)
+        # 敵惑星: 他の敵から rival_eta が計算されても攻撃自体は意味があるので継続
+        if (
+            t.owner == NEUTRAL_OWNER
+            and math.isfinite(rival_eta)
+            and rival_eta <= my_eta
+        ):
+            continue
+
+        # 静止惑星は timeline で hold チェック (取って即奪われる候補を排除)
+        if timelines and t.id in timelines and not is_orbital:
+            _horizon = max(1, min(80, remaining_turns)) if remaining_turns is not None else 80
+            hold = estimate_hold_turns(timelines[t.id], player, int(math.ceil(my_eta)), _horizon)
+            if hold <= 0:
+                continue
+
         focus_planned = int(planned.get(t.id, 0)) if planned else 0
 
-        # P7: opening expand — 中立惑星の競合フィルタ + 先取りボーナス
+        # 中立 expand 競合フィルタ + 先取りボーナス (ルール③: opp_eta が近いほど先取り価値)
         opening_contention_bonus = 0.0
         if is_opening and t.owner == NEUTRAL_OWNER:
             opp_eta = rival_eta if math.isfinite(rival_eta) else None
@@ -572,65 +461,27 @@ def enumerate_candidates(
                 continue
             opening_contention_bonus = bonus
 
-        # P6: timeline ベースの hold_turns 価値計算 (静止惑星のみ)
-        if timelines and t.id in timelines and not is_orbital:
-            _horizon = max(1, min(80, remaining_turns)) if remaining_turns is not None else 80
-            hold = estimate_hold_turns(timelines[t.id], player, int(math.ceil(my_eta)), _horizon)
-            if hold <= 0:
-                continue
-            factor = (
-                _overextend_factor(my_planet_count, domination) if t.owner == NEUTRAL_OWNER else 1.0
-            )
-            _opening_bonus = STATIC_HIGH_PROD_BONUS if t.production >= 4 else 0.0
-            _central_bonus = 0.0
-            if (
-                t.owner == NEUTRAL_OWNER
-                and elapsed_turns <= CENTRAL_OPENING_TURNS
-                and r < CENTRAL_REF_RADIUS
-            ):
-                _central_bonus = CENTRAL_BONUS_MAX * (1.0 - r / CENTRAL_REF_RADIUS)
-            _focus_bonus = FOCUS_BONUS_PER_PLANNED_SHIP * max(0, int(focus_planned))
-            # P8: 序盤 production^2 urgency
-            _urgency = _prod_urgency_bonus(t.production, elapsed_turns)
-            value = (
-                t.production * hold * factor
-                + _opening_bonus
-                + _central_bonus
-                + _focus_bonus
-                + _urgency
-                + opening_contention_bonus
-                - ships_needed
-                - my_eta * TRAVEL_PENALTY
-                - my_eta**2 * TRAVEL_PENALTY_QUAD
-            )
-        else:
-            _urgency = _prod_urgency_bonus(t.production, elapsed_turns)
-            value = (
-                target_value(
-                    my_planet,
-                    ix,
-                    iy,
-                    t.production,
-                    rival_eta,
-                    ships_needed,
-                    my_eta,
-                    target_owner=t.owner,
-                    mode=mode,
-                    remaining_turns=remaining_turns,
-                    is_orbital=is_orbital,
-                    orbital_radius=r,
-                    my_planet_count=my_planet_count,
-                    domination=domination,
-                    focus_planned_ships=focus_planned,
-                )
-                + _urgency
-                + opening_contention_bonus
-            )
-        # P8: 同時並行占領ボーナス — 既発射フリートの ETA と近い候補に加点
+        value = target_value(
+            my_planet,
+            ix,
+            iy,
+            t.production,
+            rival_eta,
+            ships_needed,
+            my_eta,
+            target_owner=t.owner,
+            remaining_turns=remaining_turns,
+            is_orbital=is_orbital,
+            orbital_radius=r,
+            focus_planned_ships=focus_planned,
+        ) + opening_contention_bonus
+
+        # 同時並行占領ボーナス (ルール⑧: 既発射 ETA と近い候補に加点)
         if concurrent_etas and any(
             abs(my_eta - e) <= CONCURRENT_WINDOW for e in concurrent_etas
         ):
             value += CONCURRENT_BONUS
+
         out.append((t, ships_needed, angle, value, float(my_eta)))
     return out
 
@@ -812,118 +663,6 @@ def enumerate_intercept_candidates(
     return out
 
 
-def enumerate_snipe_candidates(
-    my_planet: Planet,
-    all_planets,
-    fleets,
-    player: int,
-    angular_velocity: float = 0.0,
-    planned: dict | None = None,
-    remaining_turns: int | None = None,
-    timelines: dict | None = None,
-    ledger: dict | None = None,
-    horizon: int = 80,
-) -> list:
-    """中立惑星への snipe 候補を列挙する。
-
-    条件: 中立 + ledger に enemy arrival あり + 自 eta < 最速 enemy eta
-    value = production * hold_turns - ships_needed - my_eta * TRAVEL_PENALTY
-            - (SNIPE_HOLD_PENALTY if hold_turns < SNIPE_MIN_HOLD else 0)
-    """
-    from .utils import CENTER
-
-    if planned is None:
-        planned = {}
-    if ledger is None:
-        ledger = {}
-
-    out = []
-    for target in all_planets:
-        if target.owner != NEUTRAL_OWNER:
-            continue
-        if target.id == my_planet.id:
-            continue
-        enemy_arrivals = [a for a in ledger.get(target.id, []) if a.owner != player]
-        if not enemy_arrivals:
-            continue
-        enemy_min_eta = min(a.eta for a in enemy_arrivals)
-
-        r = math.hypot(target.x - CENTER, target.y - CENTER)
-        is_orbital = angular_velocity != 0.0 and (r + target.radius < 50)
-        if is_orbital:
-            ships_approx = max(1, my_planet.ships // 2)
-            ix, iy, my_eta = intercept_pos(
-                my_planet.x, my_planet.y, ships_approx, target, angular_velocity
-            )
-        else:
-            ix, iy = target.x, target.y
-            ships_approx = max(1, my_planet.ships // 2)
-            my_eta = route_eta(my_planet.x, my_planet.y, ix, iy, ships_approx)
-
-        if my_eta >= enemy_min_eta:
-            continue
-        if segment_hits_sun(my_planet.x, my_planet.y, ix, iy):
-            continue
-        if remaining_turns is not None and my_eta > remaining_turns:
-            continue
-
-        already_sent = planned.get(target.id, 0)
-        if timelines and target.id in timelines:
-            needed = ships_needed_to_capture_at(
-                target, timelines[target.id], player, int(math.ceil(my_eta))
-            )
-        else:
-            needed = ships_budget(target, my_eta=my_eta)
-        needed = max(0, needed - already_sent)
-        if needed <= 0:
-            continue
-        # P0: 実 ships で会合点を再計算
-        if is_orbital and needed != ships_approx:
-            ix, iy, my_eta = intercept_pos(
-                my_planet.x, my_planet.y, needed, target, angular_velocity
-            )
-            if my_eta >= enemy_min_eta:
-                continue
-            if segment_hits_sun(my_planet.x, my_planet.y, ix, iy):
-                continue
-            if remaining_turns is not None and my_eta > remaining_turns:
-                continue
-            if timelines and target.id in timelines:
-                needed = ships_needed_to_capture_at(
-                    target, timelines[target.id], player, int(math.ceil(my_eta))
-                )
-            else:
-                needed = ships_budget(target, my_eta=my_eta)
-            needed = max(0, needed - already_sent)
-            if needed <= 0:
-                continue
-        angle, _ = route_angle_and_distance(my_planet.x, my_planet.y, ix, iy)
-
-        timeline = timelines.get(target.id) if timelines else None
-        if timeline is not None:
-            hold_turns, _ = estimate_snipe_outcome(
-                target,
-                timeline,
-                player,
-                my_eta=int(math.ceil(my_eta)),
-                ships_after_capture=needed,
-                horizon=horizon,
-            )
-        else:
-            hold_turns = max(0, horizon - int(my_eta))
-
-        if hold_turns == 0:
-            continue
-
-        penalty = SNIPE_HOLD_PENALTY if hold_turns < SNIPE_MIN_HOLD else 0.0
-        value = target.production * hold_turns - needed - my_eta * TRAVEL_PENALTY - penalty
-        if value <= 0:
-            continue
-
-        out.append((target, needed, angle, value, float(my_eta)))
-    return out
-
-
 def enumerate_post_launch_snipe_candidates(
     my_planet: Planet,
     all_planets,
@@ -1026,7 +765,6 @@ def enumerate_swarm_candidates(
     planned: dict | None = None,
     fired_sources: set | None = None,
     defense_status: dict | None = None,
-    mode: str = "neutral",
     remaining_turns: int | None = None,
     timelines: dict | None = None,
     eta_sync_tolerance: int = ETA_SYNC_TOLERANCE,
@@ -1138,7 +876,7 @@ def enumerate_swarm_candidates(
                         value3 = target_value(
                             src_a, target.x, target.y, target.production, rival_eta,
                             ships_a3 + ships_b3 + ships_c3, joint_eta3,
-                            target_owner=target.owner, mode=mode,
+                            target_owner=target.owner,
                             remaining_turns=remaining_turns, is_orbital=is_orbital, orbital_radius=r,
                         )
                         if value3 <= 0:
@@ -1177,7 +915,6 @@ def enumerate_swarm_candidates(
                     ships_a + ships_b,
                     joint_eta,
                     target_owner=target.owner,
-                    mode=mode,
                     remaining_turns=remaining_turns,
                     is_orbital=is_orbital,
                     orbital_radius=r,

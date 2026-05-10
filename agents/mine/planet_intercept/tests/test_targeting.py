@@ -2,20 +2,14 @@ import math
 
 import pytest
 from src.targeting import (
-    AHEAD_THRESHOLD,
-    BEHIND_THRESHOLD,
     NEUTRAL_OWNER,
-    SNIPE_MIN_HOLD,
-    TRAVEL_PENALTY,
     SwarmMission,
     build_planned_commitments,
     classify_defense,
-    compute_domination,
     compute_rival_eta,
     compute_rival_eta_per_player,
     enumerate_candidates,
     enumerate_intercept_candidates,
-    enumerate_snipe_candidates,
     enumerate_swarm_candidates,
     expand_priority_score,
     fleet_heading_to,
@@ -74,125 +68,49 @@ class TestShipsBudget:
 
 
 class TestTargetValue:
-    def test_neutral_inf_rival_positive(self):
+    """ROI 式: value = production / (ships + my_eta * production) * ROI_SCALE。
+
+    rival_eta < my_eta (先着不可) のフィルタは enumerate_candidates 側で行う。
+    target_value は純粋に ROI のみを計算する。
+    """
+
+    def test_positive_for_valid_target(self):
         mine = P(0, 0, 0, 0, ships=50)
         v = target_value(
             mine, 20.0, 0.0, 3, math.inf, ships_to_send=7, my_eta=20.0, target_owner=NEUTRAL_OWNER
         )
         assert v > 0
 
-    def test_enemy_reaches_first_returns_zero_gain(self):
+    def test_zero_when_production_is_zero(self):
         mine = P(0, 0, 0, 0, ships=50)
         v = target_value(
-            mine, 20.0, 0.0, 3, rival_eta=0.1, ships_to_send=10, my_eta=20.0, target_owner=1
+            mine, 20.0, 0.0, 0, math.inf, ships_to_send=10, my_eta=5.0, target_owner=NEUTRAL_OWNER
         )
-        assert v < 0
+        assert v == 0.0
 
-    def test_we_reach_first_positive_gain(self):
+    def test_zero_when_ships_to_send_zero(self):
         mine = P(0, 0, 0, 0, ships=50)
         v = target_value(
-            mine, 20.0, 0.0, 3, rival_eta=100.0, ships_to_send=10, my_eta=5.0, target_owner=1
+            mine, 20.0, 0.0, 3, math.inf, ships_to_send=0, my_eta=5.0, target_owner=NEUTRAL_OWNER
         )
-        assert v > 0
+        assert v == 0.0
 
-    def test_quadratic_penalty_applied(self):
-        """2 乗ペナルティが追加されると ETA=40 の value が線形のみより低くなること。"""
-        from src.targeting import TRAVEL_PENALTY_QUAD
-
+    def test_higher_production_higher_value_same_cost(self):
         mine = P(0, 0, 0, 0, ships=50)
-        v = target_value(
-            mine, 20.0, 0.0, 1, math.inf, ships_to_send=5, my_eta=40.0, target_owner=NEUTRAL_OWNER
-        )
-        expected_reduction = 40.0**2 * TRAVEL_PENALTY_QUAD
-        assert expected_reduction == pytest.approx(4.8)
-        # 2 乗ペナルティがなければ value はこれより高いはず
-        assert v < v + expected_reduction
-
-
-class TestTargetValueNeutralNewSpec:
-    """m090 深掘りで確定したバグの再発防止。敵惑星 1 個が存在して rival_eta が有限でも
-    中立惑星は future_income ベースで正値化されること。"""
-
-    def test_neutral_finite_rival_still_positive(self):
-        mine = P(0, 0, 10, 10, ships=10)
-        # rival_eta >= my_eta (threat なし) なら中立は HOLD_HORIZON ベース
-        v = target_value(
-            mine,
-            20.0,
-            20.0,
-            production=1,
-            rival_eta=13.0,
-            ships_to_send=7,
-            my_eta=11.0,
-            target_owner=NEUTRAL_OWNER,
-        )
-        assert v > 0
-
-    def test_neutral_higher_prod_preferred(self):
-        mine = P(0, 0, 10, 10, ships=50)
-        v_lo = target_value(
-            mine,
-            20.0,
-            20.0,
-            production=1,
-            rival_eta=30.0,
-            ships_to_send=7,
-            my_eta=11.0,
-            target_owner=NEUTRAL_OWNER,
-        )
-        v_hi = target_value(
-            mine,
-            20.0,
-            20.0,
-            production=5,
-            rival_eta=30.0,
-            ships_to_send=7,
-            my_eta=11.0,
-            target_owner=NEUTRAL_OWNER,
-        )
+        v_lo = target_value(mine, 20.0, 0.0, production=1, rival_eta=math.inf,
+                            ships_to_send=10, my_eta=5.0, target_owner=NEUTRAL_OWNER)
+        v_hi = target_value(mine, 20.0, 0.0, production=5, rival_eta=math.inf,
+                            ships_to_send=10, my_eta=5.0, target_owner=NEUTRAL_OWNER)
         assert v_hi > v_lo
 
-    def test_neutral_with_threat_falls_back_to_gain_formula(self):
-        """rival_eta < my_eta (先着される) なら future_income を与えない。"""
-        mine = P(0, 0, 10, 10, ships=50)
-        v = target_value(
-            mine,
-            20.0,
-            20.0,
-            production=5,
-            rival_eta=5.0,
-            ships_to_send=10,
-            my_eta=20.0,
-            target_owner=NEUTRAL_OWNER,
-        )
-        # production * max(0, 5-20) - 10 = -10
-        assert v == pytest.approx(-10.0)
-
-    def test_enemy_planet_still_uses_gain_formula(self):
-        mine = P(0, 0, 10, 10, ships=50)
-        # 敵惑星 (target_owner=1): HOLD_HORIZON 分岐に入らない
-        v_win = target_value(
-            mine,
-            20.0,
-            20.0,
-            production=3,
-            rival_eta=100.0,
-            ships_to_send=10,
-            my_eta=5.0,
-            target_owner=1,
-        )
-        v_lose = target_value(
-            mine,
-            20.0,
-            20.0,
-            production=3,
-            rival_eta=1.0,
-            ships_to_send=10,
-            my_eta=50.0,
-            target_owner=1,
-        )
-        assert v_win > 0
-        assert v_lose < 0
+    def test_longer_eta_lower_value(self):
+        """travel time が長いほど ROI 分母が大きくなり value は下がる。"""
+        mine = P(0, 0, 0, 0, ships=50)
+        v_near = target_value(mine, 20.0, 0.0, 3, math.inf, ships_to_send=10, my_eta=5.0,
+                              target_owner=NEUTRAL_OWNER)
+        v_far = target_value(mine, 20.0, 0.0, 3, math.inf, ships_to_send=10, my_eta=40.0,
+                             target_owner=NEUTRAL_OWNER)
+        assert v_near > v_far
 
 
 class TestComputeRivalETA:
@@ -698,99 +616,6 @@ class TestClassifyDefense:
         assert reserve == 15
 
 
-class TestEnumerateSnipeCandidates:
-    def test_neutral_with_enemy_arrival_produces_candidate(self):
-        """中立 + enemy arrival あり + 自 eta < enemy eta なら候補が出る。"""
-        import math as _math
-
-        my_planet = P(0, 0, 0, 0, ships=50)
-        target = P(1, NEUTRAL_OWNER, 10, 0, ships=5, prod=2)
-        enemy_planet = P(2, 1, 90, 0, ships=10)
-        planets = [my_planet, target, enemy_planet]
-        enemy_fleet = Fleet(
-            id=10,
-            owner=1,
-            x=50,
-            y=0,
-            angle=_math.pi,
-            from_planet_id=99,
-            ships=10,
-        )
-        ledger = build_arrival_ledger(planets, [enemy_fleet], horizon=80)
-        timelines = build_timelines(planets, ledger, horizon=80)
-        cands = enumerate_snipe_candidates(
-            my_planet,
-            planets,
-            [enemy_fleet],
-            player=0,
-            timelines=timelines,
-            ledger=ledger,
-            horizon=80,
-        )
-        assert any(c[0].id == target.id for c in cands)
-
-    def test_no_enemy_arrival_no_candidate(self):
-        """ledger に enemy arrival なし -> 候補なし。"""
-        my_planet = P(0, 0, 0, 0, ships=50)
-        target = P(1, NEUTRAL_OWNER, 10, 0, ships=5, prod=2)
-        planets = [my_planet, target]
-        cands = enumerate_snipe_candidates(
-            my_planet,
-            planets,
-            fleets=[],
-            player=0,
-            timelines={},
-            ledger={},
-            horizon=80,
-        )
-        assert cands == []
-
-    def test_short_hold_has_penalty(self):
-        """hold_turns < SNIPE_MIN_HOLD のとき value がペナルティ分小さくなる。"""
-        import math as _math
-
-        my_planet = P(0, 0, 0, 0, ships=50)
-        target = P(1, NEUTRAL_OWNER, 10, 0, ships=5, prod=2)
-        planets = [my_planet, target]
-        # enemy が eta=2 前後で到着 -> hold_turns が SNIPE_MIN_HOLD 未満になる
-        enemy_fleet = Fleet(id=10, owner=1, x=15, y=0, angle=_math.pi, from_planet_id=99, ships=10)
-        ledger = build_arrival_ledger(planets, [enemy_fleet], horizon=80)
-        timelines = build_timelines(planets, ledger, horizon=80)
-        cands = enumerate_snipe_candidates(
-            my_planet,
-            planets,
-            [enemy_fleet],
-            player=0,
-            timelines=timelines,
-            ledger=ledger,
-            horizon=80,
-        )
-        if cands:
-            v = cands[0][3]
-            ships_needed = cands[0][1]
-            my_eta = cands[0][4]
-            no_penalty_cap = (
-                target.production * SNIPE_MIN_HOLD - ships_needed - my_eta * TRAVEL_PENALTY
-            )
-            assert v < no_penalty_cap
-
-    def test_enemy_owned_target_excluded(self):
-        """target.owner が enemy -> 候補なし (中立のみ対象)。"""
-        my_planet = P(0, 0, 0, 0, ships=50)
-        target = P(1, 1, 10, 0, ships=5, prod=2)
-        planets = [my_planet, target]
-        cands = enumerate_snipe_candidates(
-            my_planet,
-            planets,
-            fleets=[],
-            player=0,
-            timelines={},
-            ledger={},
-            horizon=80,
-        )
-        assert cands == []
-
-
 class TestEnumerateSwarmCandidates:
     def test_swarm_mission_dataclass_importable(self):
         """SwarmMission が dataclass として使えること。"""
@@ -890,28 +715,6 @@ class TestComputeRivalEtaOrbital:
         assert eta_static != pytest.approx(eta_orbital, rel=0.01)
 
 
-class TestComputeDomination:
-    def test_equal_returns_zero(self):
-        dom = compute_domination(my_total=100, enemy_total=100)
-        assert dom == pytest.approx(0.0)
-
-    def test_all_mine_returns_one(self):
-        dom = compute_domination(my_total=100, enemy_total=0)
-        assert dom == pytest.approx(1.0)
-
-    def test_all_enemy_returns_minus_one(self):
-        dom = compute_domination(my_total=0, enemy_total=100)
-        assert dom == pytest.approx(-1.0)
-
-    def test_both_zero_returns_zero(self):
-        dom = compute_domination(my_total=0, enemy_total=0)
-        assert dom == pytest.approx(0.0)
-
-    def test_thresholds_exist_and_sign(self):
-        assert BEHIND_THRESHOLD < 0
-        assert AHEAD_THRESHOLD > 0
-
-
 class TestEnumerateCandidatesEndgame:
     def test_unreachable_target_excluded(self):
         mine = P(0, 0, 0, 0, ships=50)
@@ -939,88 +742,6 @@ class TestEnumerateCandidatesEndgame:
         assert any(c[0].id == far_target.id for c in cands)
 
 
-class TestTargetValueWithMode:
-    def test_behind_mode_reduces_neutral_value(self):
-        mine = P(0, 0, 0, 0, ships=50)
-        v_neutral = target_value(
-            mine,
-            20.0,
-            0.0,
-            3,
-            math.inf,
-            ships_to_send=7,
-            my_eta=5.0,
-            target_owner=NEUTRAL_OWNER,
-            mode="neutral",
-        )
-        v_behind = target_value(
-            mine,
-            20.0,
-            0.0,
-            3,
-            math.inf,
-            ships_to_send=7,
-            my_eta=5.0,
-            target_owner=NEUTRAL_OWNER,
-            mode="behind",
-        )
-        assert v_behind < v_neutral
-
-    def test_ahead_mode_same_as_neutral_for_neutral_planet(self):
-        mine = P(0, 0, 0, 0, ships=50)
-        v_neutral = target_value(
-            mine,
-            20.0,
-            0.0,
-            3,
-            math.inf,
-            ships_to_send=7,
-            my_eta=5.0,
-            target_owner=NEUTRAL_OWNER,
-            mode="neutral",
-        )
-        v_ahead = target_value(
-            mine,
-            20.0,
-            0.0,
-            3,
-            math.inf,
-            ships_to_send=7,
-            my_eta=5.0,
-            target_owner=NEUTRAL_OWNER,
-            mode="ahead",
-        )
-        # ahead モードでは中立惑星の HOLD_HORIZON は変えない (敵惑星への積極性は別途)
-        assert v_ahead == pytest.approx(v_neutral)
-
-    def test_mode_does_not_affect_enemy_planet(self):
-        mine = P(0, 0, 0, 0, ships=50)
-        v_behind = target_value(
-            mine,
-            20.0,
-            0.0,
-            3,
-            rival_eta=100.0,
-            ships_to_send=10,
-            my_eta=5.0,
-            target_owner=1,
-            mode="behind",
-        )
-        v_neutral = target_value(
-            mine,
-            20.0,
-            0.0,
-            3,
-            rival_eta=100.0,
-            ships_to_send=10,
-            my_eta=5.0,
-            target_owner=1,
-            mode="neutral",
-        )
-        # 敵惑星の価値式は mode によらない
-        assert v_behind == pytest.approx(v_neutral)
-
-
 class TestEnumerateCandidatesP6:
     def test_long_hold_gives_positive_value(self):
         """敵が来ない timeline では正の value を返す (中立惑星)"""
@@ -1044,49 +765,6 @@ class TestEnumerateCandidatesP6:
             remaining_turns=500,
         )
         assert any(c[0].id == 1 and c[3] > 0 for c in cands)
-
-    def test_short_hold_has_lower_value_than_long_hold(self):
-        """敵がすぐ来る timeline は敵が来ない timeline より value が低い (中立惑星)"""
-        from src.world import PlanetState
-
-        mine = P(0, 0, 0, 0, ships=50)
-        target = P(1, -1, 10, 0, ships=1, prod=3)
-        planets = [mine, target]
-
-        # my_eta≈10 で占領後、turn 12 に敵来る -> hold=2
-        short_hold = [
-            PlanetState(turn=t, owner=(-1 if t < 11 else (1 if t >= 12 else 0)), ships=3)
-            for t in range(1, 81)
-        ]
-        # 敵が来ない -> hold=70
-        long_hold = [
-            PlanetState(turn=t, owner=(-1 if t < 11 else 0), ships=3) for t in range(1, 81)
-        ]
-
-        cands_short = enumerate_candidates(
-            mine,
-            planets,
-            fleets=[],
-            player=0,
-            timelines={1: short_hold},
-            remaining_turns=500,
-        )
-        cands_long = enumerate_candidates(
-            mine,
-            planets,
-            fleets=[],
-            player=0,
-            timelines={1: long_hold},
-            remaining_turns=500,
-        )
-        val_short = next((c[3] for c in cands_short if c[0].id == 1), None)
-        val_long = next((c[3] for c in cands_long if c[0].id == 1), None)
-        # short は除外されるか、または long より低い
-        if val_short is not None and val_long is not None:
-            assert val_short < val_long
-        else:
-            # short が除外 (hold<=0) される場合も正しい動作
-            assert val_long is not None
 
     def test_hold_zero_excluded_from_candidates(self):
         """hold_turns=0 の惑星は候補から除外される (horizon == my_eta のケース)"""
@@ -1163,7 +841,7 @@ class TestOpeningExpandFilter:
             planets,
             fleets,
             player=0,
-            remaining_turns=500 - 5,  # elapsed=5 < OPENING_TURNS
+            remaining_turns=500 - 5,  # 序盤 = is_opening=True を直接渡す
             is_opening=True,
         )
         cands_normal = enumerate_candidates(
@@ -1176,9 +854,10 @@ class TestOpeningExpandFilter:
         )
         target_ids_opening = [c[0].id for c in cands_opening]
         target_ids_normal = [c[0].id for c in cands_normal]
-        # opening では opp が先着なので除外、非 opening では除外しない
+        # ROI 式: opp が先着なら is_opening 問わず常に除外
+        # (取れない中立に投資する意味がない)
         assert 1 not in target_ids_opening
-        assert 1 in target_ids_normal
+        assert 1 not in target_ids_normal
 
     def test_contention_higher_value_than_no_contention(self):
         """競合ありの中立惑星は競合なしより value が高い (opening 中)"""
@@ -1455,7 +1134,7 @@ class TestJITDispatch:
         assert cands[0][0].id == defended.id
 
 
-from src.targeting import ABANDON_COST_RATIO, HOLD_HORIZON, OVERCAP_FACTOR, SNIPE_THIN_THRESHOLD, enumerate_post_launch_snipe_candidates
+from src.targeting import ABANDON_COST_RATIO, OVERCAP_FACTOR, SNIPE_THIN_THRESHOLD, enumerate_post_launch_snipe_candidates
 
 
 class TestPostLaunchSnipe:
